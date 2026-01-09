@@ -1,0 +1,1080 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Architecture Visualization</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+            background: #000;
+        }
+        
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #text-overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+            pointer-events: none;
+        }
+        
+        #text-overlay.visible {
+            opacity: 1;
+        }
+        
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+    <div id="loading">Loading 3D models...</div>
+    <div id="text-overlay"></div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.168.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/"
+            }
+        }
+    </script>
+    
+    <!-- GSAP for animations -->
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+        import { setupLighting, setupRenderer, configureModelForRendering, sceneConfig, setupSSAO } from './lighting-config.js';
+
+        // Scene setup
+        const scene = new THREE.Scene();
+        scene.background = sceneConfig.background;
+        
+        // Camera - positioned to view the models (zoomed out)
+        const camera = new THREE.PerspectiveCamera(
+            50,
+            window.innerWidth / window.innerHeight,
+            0.1,
+            10000 // Increased far plane to prevent clipping at distance
+        );
+        // Position camera to view the models - zoomed out to see more
+        // Based on model center at (-28.49, 15.90, 45.45), zoom out significantly
+        camera.position.set(-100, 100, 150);
+        camera.lookAt(-30, 20, 50);
+        
+        // Renderer - use centralized setup
+        const renderer = setupRenderer(document.getElementById('canvas-container'));
+        
+        // Lighting - use centralized setup (ambient + directional)
+        setupLighting(scene);
+        
+        // Camera controls - enable movement, zoom, rotation (no UI)
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.screenSpacePanning = false;
+        controls.minDistance = 10;
+        controls.maxDistance = 500;
+        controls.target.set(-30, 20, 50); // Match the camera lookAt target
+        
+        // Post-processing for SSAO (Screen Space Ambient Occlusion)
+        const composer = setupSSAO(scene, camera, renderer, SSAOPass, EffectComposer, RenderPass, OutputPass);
+        
+        // Loader
+        const loader = new GLTFLoader();
+        
+        // Render order configuration - higher values are drawn last (on top)
+        const renderOrder = {
+            glazing: 0,           // Draw first (lowest)
+            baseSurface: 1,
+            wallOutlineExtruded: 2,
+            panelUnits: 3         // Draw last (highest - on top)
+        };
+        
+        // Variables to store loaded models
+        let baseSurface = null;
+        let panelUnits = null;
+        let panelUnitsInitialPosition = null;
+        let panelUnitsOriginalOpacity = {};
+        let wallOutlineExtruded = null;
+        let glazing = null;
+        let glazingOriginalOpacity = {};
+        
+        // New geometry variables
+        let cylinder = null;
+        let cylinderOriginalOpacity = {};
+        let circlePipes = null;
+        let circlePipesOriginalOpacity = {};
+        let baseSurfaceUntrimmedMiddle = null;
+        let baseSurfaceUntrimmedMiddleOriginalOpacity = {};
+        let baseSurfaceUntrimmedSides = null;
+        let baseSurfaceUntrimmedSidesOriginalOpacity = {};
+        let panelUnitPipe = null;
+        let panelUnitPipeOriginalOpacity = {};
+        
+        // Animation timing configuration - simple start times for each fade
+        // Sequence: cylinder/circlePipes → baseSurfaceUntrimmed-middle → baseSurfaceUntrimmed-sides → panelUnitPipe → wallOutline/panelUnits → glazing/baseSurface
+        const animationTimings = {
+            fadeDuration: 1, // Duration for fade in/out transitions (1 second)
+            
+            // Phase 1: On cylinder and circle pipes
+            cylinderFadeIn: 0,
+            cylinderFadeOut: 2,        // Off cylinder
+            circlePipesFadeIn: 0,
+            circlePipesFadeOut: 6,    // Off circle pipes
+            
+            // Phase 2: On basesurfaceuntrimmed-middle (when cylinder goes off)
+            baseSurfaceUntrimmedMiddleFadeIn: 2,
+            baseSurfaceUntrimmedMiddleFadeOut: 8,  // Off basesurface-middle
+            
+            // Phase 3: On basesurfaceuntrimmed-sides
+            baseSurfaceUntrimmedSidesFadeIn: 4,
+            baseSurfaceUntrimmedSidesFadeOut: 8,   // Off basesurface-side
+            
+            // Phase 4: On panelunitpipe (when circle pipes go off)
+            panelUnitPipeFadeIn: 6,
+            panelUnitPipeFadeOut: 10,
+            
+            // Phase 5: On walloutlineextruded and panelunits colored
+            outlineFadeIn: 8,
+            outlineFadeOut: 10,
+            colorPanelsFadeIn: 8,
+            colorPanelsFadeOut: 10,    // Off panelunits colored
+            
+            // Phase 6: On glazing and basesurface (when panelunits go off)
+            glazingFadeIn: 10,
+            glazingFadeOut: 12,
+            baseSurfaceFadeIn: 10,
+            baseSurfaceFadeOut: 12
+        };
+        
+        // GSAP timeline for all animations
+        let mainTimeline = null;
+        
+        // Helper function to update BaseSurface opacity - fade entire GLTF scene (same as PanelUnits)
+        function updateBaseSurfaceOpacity(opacity) {
+            if (!baseSurface) {
+                console.warn('[BaseSurface] updateBaseSurfaceOpacity called but baseSurface is null');
+                return;
+            }
+            // Set depthWrite based on opacity - false when fading or invisible
+            const isFullyOpaque = opacity >= 1.0;
+            
+            baseSurface.traverse((child) => {
+                if (child.isMesh && child.material) {
+                    const materials = Array.isArray(child.material) ? child.material : [child.material];
+                    materials.forEach((material, index) => {
+                        const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                        const originalOpacity = baseSurfaceOriginalOpacity[key] || 1.0;
+                        material.opacity = originalOpacity * opacity;
+                        material.transparent = opacity < 1.0; // Enable transparency when not fully opaque
+                        material.depthWrite = isFullyOpaque; // Disable depth write when fading or invisible
+                        material.needsUpdate = true; // Ensure material updates
+                    });
+                }
+            });
+        }
+        
+        // Helper function to update WallOutlineExtruded opacity
+        function updateWallOutlineExtrudedOpacity(opacity) {
+            if (!wallOutlineExtruded) return;
+            // Set depthWrite based on opacity - false when fading or invisible
+            const isFullyOpaque = opacity >= 1.0;
+            
+            wallOutlineExtruded.traverse((child) => {
+                if (child.isMesh && child.material) {
+                    const materials = Array.isArray(child.material) ? child.material : [child.material];
+                    materials.forEach((material, index) => {
+                        const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                        const originalOpacity = wallOutlineExtrudedOriginalOpacity[key] || 1.0;
+                        material.opacity = originalOpacity * opacity;
+                        material.depthWrite = isFullyOpaque; // Disable depth write when fading or invisible
+                        material.needsUpdate = true; // Ensure material updates
+                    });
+                }
+            });
+        }
+        
+        // Helper function to update PanelUnits opacity
+        function updatePanelUnitsOpacity(opacity) {
+            if (!panelUnits) return;
+            // Set depthWrite based on opacity - false when fading or invisible
+            const isFullyOpaque = opacity >= 1.0;
+            
+            panelUnits.traverse((child) => {
+                if (child.isMesh && child.material) {
+                    const materials = Array.isArray(child.material) ? child.material : [child.material];
+                    materials.forEach((material, index) => {
+                        const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                        const originalOpacity = panelUnitsOriginalOpacity[key] || 1.0;
+                        material.opacity = originalOpacity * opacity;
+                        material.depthWrite = isFullyOpaque; // Disable depth write when fading or invisible
+                        material.needsUpdate = true; // Ensure material updates
+                    });
+                }
+            });
+        }
+        
+        // Helper function to update Glazing opacity - fade entire GLTF scene (same as PanelUnits)
+        function updateGlazingOpacity(opacity) {
+            if (!glazing) {
+                console.warn('[Glazing] updateGlazingOpacity called but glazing is null');
+                return;
+            }
+            // Set depthWrite based on opacity - false when fading or invisible
+            const isFullyOpaque = opacity >= 1.0;
+            
+            glazing.traverse((child) => {
+                if (child.isMesh && child.material) {
+                    const materials = Array.isArray(child.material) ? child.material : [child.material];
+                    materials.forEach((material, index) => {
+                        const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                        const originalOpacity = glazingOriginalOpacity[key] || 1.0;
+                        material.opacity = originalOpacity * opacity;
+                        material.transparent = opacity < 1.0; // Enable transparency when not fully opaque
+                        material.depthWrite = isFullyOpaque; // Disable depth write when fading or invisible
+                        material.needsUpdate = true; // Ensure material updates
+                    });
+                }
+            });
+        }
+        
+        // BaseSurface state
+        let baseSurfaceOriginalOpacity = {};
+        let wallOutlineExtrudedOriginalOpacity = {};
+        
+        // Helper functions for new geometry (same pattern as existing ones)
+        function updateCylinderOpacity(opacity) {
+            if (!cylinder) return;
+            const isFullyOpaque = opacity >= 1.0;
+            cylinder.traverse((child) => {
+                if (child.isMesh && child.material) {
+                    const materials = Array.isArray(child.material) ? child.material : [child.material];
+                    materials.forEach((material, index) => {
+                        const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                        const originalOpacity = cylinderOriginalOpacity[key] || 1.0;
+                        material.opacity = originalOpacity * opacity;
+                        material.transparent = opacity < 1.0;
+                        material.depthWrite = isFullyOpaque;
+                        material.needsUpdate = true;
+                    });
+                }
+            });
+        }
+        
+        function updateCirclePipesOpacity(opacity) {
+            if (!circlePipes) return;
+            const isFullyOpaque = opacity >= 1.0;
+            circlePipes.traverse((child) => {
+                if (child.isMesh && child.material) {
+                    const materials = Array.isArray(child.material) ? child.material : [child.material];
+                    materials.forEach((material, index) => {
+                        const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                        const originalOpacity = circlePipesOriginalOpacity[key] || 1.0;
+                        material.opacity = originalOpacity * opacity;
+                        material.transparent = opacity < 1.0;
+                        material.depthWrite = isFullyOpaque;
+                        material.needsUpdate = true;
+                    });
+                }
+            });
+        }
+        
+        function updateBaseSurfaceUntrimmedMiddleOpacity(opacity) {
+            if (!baseSurfaceUntrimmedMiddle) return;
+            const isFullyOpaque = opacity >= 1.0;
+            baseSurfaceUntrimmedMiddle.traverse((child) => {
+                if (child.isMesh && child.material) {
+                    const materials = Array.isArray(child.material) ? child.material : [child.material];
+                    materials.forEach((material, index) => {
+                        const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                        const originalOpacity = baseSurfaceUntrimmedMiddleOriginalOpacity[key] || 1.0;
+                        material.opacity = originalOpacity * opacity;
+                        material.transparent = opacity < 1.0;
+                        material.depthWrite = isFullyOpaque;
+                        material.needsUpdate = true;
+                    });
+                }
+            });
+        }
+        
+        function updateBaseSurfaceUntrimmedSidesOpacity(opacity) {
+            if (!baseSurfaceUntrimmedSides) return;
+            const isFullyOpaque = opacity >= 1.0;
+            baseSurfaceUntrimmedSides.traverse((child) => {
+                if (child.isMesh && child.material) {
+                    const materials = Array.isArray(child.material) ? child.material : [child.material];
+                    materials.forEach((material, index) => {
+                        const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                        const originalOpacity = baseSurfaceUntrimmedSidesOriginalOpacity[key] || 1.0;
+                        material.opacity = originalOpacity * opacity;
+                        material.transparent = opacity < 1.0;
+                        material.depthWrite = isFullyOpaque;
+                        material.needsUpdate = true;
+                    });
+                }
+            });
+        }
+        
+        function updatePanelUnitPipeOpacity(opacity) {
+            if (!panelUnitPipe) return;
+            const isFullyOpaque = opacity >= 1.0;
+            panelUnitPipe.traverse((child) => {
+                if (child.isMesh && child.material) {
+                    const materials = Array.isArray(child.material) ? child.material : [child.material];
+                    materials.forEach((material, index) => {
+                        const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                        const originalOpacity = panelUnitPipeOriginalOpacity[key] || 1.0;
+                        material.opacity = originalOpacity * opacity;
+                        material.transparent = opacity < 1.0;
+                        material.depthWrite = isFullyOpaque;
+                        material.needsUpdate = true;
+                    });
+                }
+            });
+        }
+        
+        // Load BaseSurface (static, fixed at origin)
+        loader.load(
+            './BaseSurface.gltf',
+            (gltf) => {
+                baseSurface = gltf.scene;
+                baseSurface.position.set(0, 0, 0); // Fixed at origin
+                
+                // Set material color BEFORE configureModelForRendering so emissive uses correct color
+                const baseSurfaceColor = 0xd4d4d4; // Light gray color for base surface
+                baseSurface.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material) => {
+                            material.color.set(baseSurfaceColor); // Set color first
+                        });
+                    }
+                });
+                
+                // Configure model for rendering (all config is in centralized function)
+                // This will set emissive based on the color we just set
+                configureModelForRendering(baseSurface);
+                
+                // Store original opacity values and set transparency
+                baseSurface.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            baseSurfaceOriginalOpacity[key] = material.opacity !== undefined ? material.opacity : 1.0;
+                            material.transparent = true; // Enable transparency
+                            material.opacity = 0.0; // Start invisible
+                            console.log(`[BaseSurface] Set initial opacity to 0.0 for material ${key}, original: ${baseSurfaceOriginalOpacity[key]}`);
+                        });
+                    }
+                });
+                console.log('[BaseSurface] Initial setup complete, opacity should be 0.0');
+                
+                // Force immediate opacity update to ensure it's invisible
+                updateBaseSurfaceOpacity(0);
+                
+                // Set render order
+                baseSurface.renderOrder = renderOrder.baseSurface;
+                baseSurface.traverse((child) => {
+                    child.renderOrder = renderOrder.baseSurface;
+                });
+                
+                scene.add(baseSurface);
+                console.log('BaseSurface loaded and added to scene');
+                checkModelsLoaded();
+            },
+            (progress) => {
+                if (progress.lengthComputable) {
+                    const percent = (progress.loaded / progress.total) * 100;
+                    console.log('Loading BaseSurface:', percent.toFixed(2) + '%');
+                }
+            },
+            (error) => {
+                console.error('Error loading BaseSurface:', error);
+            }
+        );
+        
+        // Load PanelUnitsColored (animated)
+        loader.load(
+            './PanelUnitsColored.gltf',
+            (gltf) => {
+                panelUnits = gltf.scene;
+                panelUnits.position.set(0, 0, 0); // Fixed at origin, no movement
+                
+                // Configure model for rendering (all config is in centralized function)
+                configureModelForRendering(panelUnits);
+                
+                // Store original opacity values and enable transparency
+                panelUnits.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            panelUnitsOriginalOpacity[key] = material.opacity !== undefined ? material.opacity : 1.0;
+                            material.transparent = true; // Enable transparency
+                            material.opacity = 0.0; // Start invisible
+                        });
+                    }
+                });
+                
+                // Set render order (draw last, on top)
+                panelUnits.renderOrder = renderOrder.panelUnits;
+                panelUnits.traverse((child) => {
+                    child.renderOrder = renderOrder.panelUnits;
+                });
+                
+                scene.add(panelUnits);
+                console.log('PanelUnitsColored loaded and added to scene');
+                checkModelsLoaded();
+            },
+            (progress) => {
+                if (progress.lengthComputable) {
+                    const percent = (progress.loaded / progress.total) * 100;
+                    console.log('Loading PanelUnitsColored:', percent.toFixed(2) + '%');
+                }
+            },
+            (error) => {
+                console.error('Error loading PanelUnitsColored:', error);
+            }
+        );
+        
+        // Load WallOutlineExtruded (fades in/out opposite of BaseSurface)
+        loader.load(
+            './WallOutlineExtruded.gltf',
+            (gltf) => {
+                wallOutlineExtruded = gltf.scene;
+                wallOutlineExtruded.position.set(0, 0, 0); // Same position as BaseSurface
+                
+                // Configure model for rendering
+                configureModelForRendering(wallOutlineExtruded);
+                
+                // Store original opacity values and enable transparency
+                wallOutlineExtruded.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            wallOutlineExtrudedOriginalOpacity[key] = material.opacity !== undefined ? material.opacity : 1.0;
+                            material.transparent = true; // Enable transparency
+                            material.opacity = 0.0; // Start invisible
+                        });
+                    }
+                });
+                
+                // Set render order
+                wallOutlineExtruded.renderOrder = renderOrder.wallOutlineExtruded;
+                wallOutlineExtruded.traverse((child) => {
+                    child.renderOrder = renderOrder.wallOutlineExtruded;
+                });
+                
+                scene.add(wallOutlineExtruded);
+                console.log('WallOutlineExtruded loaded and added to scene');
+                checkModelsLoaded();
+            },
+            (progress) => {
+                if (progress.lengthComputable) {
+                    const percent = (progress.loaded / progress.total) * 100;
+                    console.log('Loading WallOutlineExtruded:', percent.toFixed(2) + '%');
+                }
+            },
+            (error) => {
+                console.error('Error loading WallOutlineExtruded:', error);
+            }
+        );
+        
+        // Load Glazing (animates 2 seconds after PanelUnits, same path)
+        loader.load(
+            './glazing.gltf',
+            (gltf) => {
+                glazing = gltf.scene;
+                glazing.position.set(0, 0, 0); // Fixed at origin, no movement
+                
+                // Configure model for rendering
+                configureModelForRendering(glazing);
+                
+                // Set glazing to solid white, start invisible for fade animation - entire GLTF scene
+                glazing.traverse((object) => {
+                    // Handle mesh materials
+                    if (object.isMesh && object.material) {
+                        const materials = Array.isArray(object.material) ? object.material : [object.material];
+                        materials.forEach((material) => {
+                            if (material) {
+                                const key = object.uuid;
+                                glazingOriginalOpacity[key] = 1.0; // Store as fully opaque
+                                // Set to solid white
+                                material.color.set(0xffffff); // White color
+                                material.transparent = true; // Still need transparency for fade animation
+                                material.opacity = 0.0; // Start invisible
+                                material.needsUpdate = true; // Ensure material updates
+                                console.log(`[Glazing] Set initial opacity to 0.0 for mesh ${key}, original: ${glazingOriginalOpacity[key]}`);
+                            }
+                        });
+                    }
+                    // Handle line materials
+                    if ((object.isLine || object.isLineSegments) && object.material) {
+                        const materials = Array.isArray(object.material) ? object.material : [object.material];
+                        materials.forEach((material) => {
+                            if (material) {
+                                const key = object.uuid;
+                                glazingOriginalOpacity[key] = 1.0;
+                                material.transparent = true;
+                                material.opacity = 0.0;
+                                material.needsUpdate = true;
+                                console.log(`[Glazing] Set initial opacity to 0.0 for line ${key}, original: ${glazingOriginalOpacity[key]}`);
+                            }
+                        });
+                    }
+                });
+                console.log('[Glazing] Initial setup complete - entire GLTF scene opacity set to 0.0');
+                
+                // Force immediate opacity update to ensure it's invisible
+                updateGlazingOpacity(0);
+                
+                // Set render order (draw first, behind everything)
+                glazing.renderOrder = renderOrder.glazing;
+                glazing.traverse((child) => {
+                    child.renderOrder = renderOrder.glazing;
+                });
+                
+                scene.add(glazing);
+                console.log('Glazing loaded and added to scene');
+                checkModelsLoaded();
+            },
+            (progress) => {
+                if (progress.lengthComputable) {
+                    const percent = (progress.loaded / progress.total) * 100;
+                    console.log('Loading Glazing:', percent.toFixed(2) + '%');
+                }
+            },
+            (error) => {
+                console.error('Error loading Glazing:', error);
+            }
+        );
+        
+        // Load Cylinder
+        loader.load(
+            './Cylinder.gltf',
+            (gltf) => {
+                cylinder = gltf.scene;
+                cylinder.position.set(0, 0, 0);
+                
+                // Set material color BEFORE configureModelForRendering so emissive uses correct color
+                // Use same color as BaseSurface
+                const baseSurfaceColor = 0xd4d4d4; // Light gray color (same as BaseSurface)
+                cylinder.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material) => {
+                            material.color.set(baseSurfaceColor); // Set color first
+                        });
+                    }
+                });
+                
+                // Now configure for rendering (this will set emissive based on the color we just set)
+                configureModelForRendering(cylinder);
+                
+                // Store opacity and set transparency
+                cylinder.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            cylinderOriginalOpacity[key] = material.opacity !== undefined ? material.opacity : 1.0;
+                            material.transparent = true;
+                            material.opacity = 0.0;
+                        });
+                    }
+                });
+                updateCylinderOpacity(0);
+                scene.add(cylinder);
+                console.log('Cylinder loaded');
+                checkModelsLoaded();
+            },
+            undefined,
+            (error) => console.error('Error loading Cylinder:', error)
+        );
+        
+        // Load CirclePipes
+        loader.load(
+            './CirlesPipe.gltf',
+            (gltf) => {
+                circlePipes = gltf.scene;
+                circlePipes.position.set(0, 0, 0);
+                configureModelForRendering(circlePipes);
+                circlePipes.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            circlePipesOriginalOpacity[key] = material.opacity !== undefined ? material.opacity : 1.0;
+                            material.color.set(0x000000); // Black color for pipes
+                            material.transparent = true;
+                            material.opacity = 0.0;
+                        });
+                    }
+                });
+                updateCirclePipesOpacity(0);
+                scene.add(circlePipes);
+                console.log('CirclePipes loaded');
+                checkModelsLoaded();
+            },
+            undefined,
+            (error) => console.error('Error loading CirclePipes:', error)
+        );
+        
+        // Load BaseSurfaceUntrimmed-Middle
+        loader.load(
+            './BaseSurfaceUntrimmed-middle.gltf',
+            (gltf) => {
+                baseSurfaceUntrimmedMiddle = gltf.scene;
+                baseSurfaceUntrimmedMiddle.position.set(0, 0, 0);
+                
+                // Use same color as BaseSurface - set BEFORE configureModelForRendering so emissive uses correct color
+                const baseSurfaceColor = 0xd4d4d4; // Light gray color (same as BaseSurface)
+                baseSurfaceUntrimmedMiddle.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material) => {
+                            material.color.set(baseSurfaceColor); // Set color first
+                        });
+                    }
+                });
+                
+                // Now configure for rendering (this will set emissive based on the color we just set)
+                configureModelForRendering(baseSurfaceUntrimmedMiddle);
+                
+                // Store opacity and set transparency
+                baseSurfaceUntrimmedMiddle.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            baseSurfaceUntrimmedMiddleOriginalOpacity[key] = material.opacity !== undefined ? material.opacity : 1.0;
+                            material.transparent = true;
+                            material.opacity = 0.0;
+                        });
+                    }
+                });
+                updateBaseSurfaceUntrimmedMiddleOpacity(0);
+                scene.add(baseSurfaceUntrimmedMiddle);
+                console.log('BaseSurfaceUntrimmed-Middle loaded');
+                checkModelsLoaded();
+            },
+            undefined,
+            (error) => console.error('Error loading BaseSurfaceUntrimmed-Middle:', error)
+        );
+        
+        // Load BaseSurfaceUntrimmed-Sides
+        loader.load(
+            './BaseSurfaceUntrimmed-sides.gltf',
+            (gltf) => {
+                baseSurfaceUntrimmedSides = gltf.scene;
+                baseSurfaceUntrimmedSides.position.set(0, 0, 0);
+                
+                // Use same color as BaseSurface - set BEFORE configureModelForRendering so emissive uses correct color
+                const baseSurfaceColor = 0xd4d4d4; // Light gray color (same as BaseSurface)
+                baseSurfaceUntrimmedSides.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material) => {
+                            material.color.set(baseSurfaceColor); // Set color first
+                        });
+                    }
+                });
+                
+                // Now configure for rendering (this will set emissive based on the color we just set)
+                configureModelForRendering(baseSurfaceUntrimmedSides);
+                
+                // Store opacity and set transparency
+                baseSurfaceUntrimmedSides.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            baseSurfaceUntrimmedSidesOriginalOpacity[key] = material.opacity !== undefined ? material.opacity : 1.0;
+                            material.transparent = true;
+                            material.opacity = 0.0;
+                        });
+                    }
+                });
+                updateBaseSurfaceUntrimmedSidesOpacity(0);
+                scene.add(baseSurfaceUntrimmedSides);
+                console.log('BaseSurfaceUntrimmed-Sides loaded');
+                checkModelsLoaded();
+            },
+            undefined,
+            (error) => console.error('Error loading BaseSurfaceUntrimmed-Sides:', error)
+        );
+        
+        // Load PanelUnitPipe
+        loader.load(
+            './PanelUnitsPipe.gltf',
+            (gltf) => {
+                panelUnitPipe = gltf.scene;
+                panelUnitPipe.position.set(0, 0, 0);
+                configureModelForRendering(panelUnitPipe);
+                panelUnitPipe.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            panelUnitPipeOriginalOpacity[key] = material.opacity !== undefined ? material.opacity : 1.0;
+                            material.color.set(0x000000); // Black color for pipes
+                            material.transparent = true;
+                            material.opacity = 0.0;
+                        });
+                    }
+                });
+                updatePanelUnitPipeOpacity(0);
+                scene.add(panelUnitPipe);
+                console.log('PanelUnitPipe loaded');
+                checkModelsLoaded();
+            },
+            undefined,
+            (error) => console.error('Error loading PanelUnitPipe:', error)
+        );
+        
+        // Check if all models are loaded
+        function checkModelsLoaded() {
+            if (baseSurface && panelUnits && wallOutlineExtruded && glazing && 
+                cylinder && circlePipes && baseSurfaceUntrimmedMiddle && 
+                baseSurfaceUntrimmedSides && panelUnitPipe) {
+                document.getElementById('loading').style.display = 'none';
+                
+                // Log scene info for debugging
+                console.log('All models loaded. Scene children:', scene.children.length);
+                
+                // Start GSAP animations
+                startAnimations();
+            }
+        }
+        
+        // Start all animations with GSAP
+        function startAnimations() {
+            console.log('[Animation] Starting animations with timings:', animationTimings);
+            
+            // Create main timeline that loops
+            mainTimeline = gsap.timeline({ repeat: -1 });
+            
+            // Set initial states explicitly BEFORE timeline starts - all new geometry starts invisible
+            console.log('[Animation] Setting initial states - ensuring all geometry starts invisible');
+            updateBaseSurfaceOpacity(0);
+            updateGlazingOpacity(0);
+            updateCylinderOpacity(0);
+            updateCirclePipesOpacity(0);
+            updateBaseSurfaceUntrimmedMiddleOpacity(0);
+            updateBaseSurfaceUntrimmedSidesOpacity(0);
+            updatePanelUnitPipeOpacity(0);
+            updatePanelUnitsOpacity(0);
+            updateWallOutlineExtrudedOpacity(0);
+            
+            // Also set in timeline at time 0 to ensure it happens at the start of each loop
+            mainTimeline.set({}, {
+                onStart: function() {
+                    console.log('[Animation] Timeline start (time 0) - resetting all geometry to invisible');
+                    updateBaseSurfaceOpacity(0);
+                    updateGlazingOpacity(0);
+                    updateCylinderOpacity(0);
+                    updateCirclePipesOpacity(0);
+                    updateBaseSurfaceUntrimmedMiddleOpacity(0);
+                    updateBaseSurfaceUntrimmedSidesOpacity(0);
+                    updatePanelUnitPipeOpacity(0);
+                    updatePanelUnitsOpacity(0);
+                    updateWallOutlineExtrudedOpacity(0);
+                }
+            }, 0);
+            
+            // Phase 1: Cylinder and CirclePipes fade in
+            const cylinderFadeIn = { progress: 0 };
+            mainTimeline.to(cylinderFadeIn, {
+                progress: 1,
+                duration: animationTimings.fadeDuration,
+                ease: "power2.out",
+                onUpdate: function() {
+                    updateCylinderOpacity(cylinderFadeIn.progress);
+                }
+            }, animationTimings.cylinderFadeIn);
+            
+            const circlePipesFadeIn = { progress: 0 };
+            mainTimeline.to(circlePipesFadeIn, {
+                progress: 1,
+                duration: animationTimings.fadeDuration,
+                ease: "power2.out",
+                onUpdate: function() {
+                    updateCirclePipesOpacity(circlePipesFadeIn.progress);
+                }
+            }, animationTimings.circlePipesFadeIn);
+            
+            // Phase 2: Cylinder fade out, BaseSurfaceUntrimmed-Middle fade in
+            const cylinderFadeOut = { progress: 1 };
+            mainTimeline.to(cylinderFadeOut, {
+                progress: 0,
+                duration: animationTimings.fadeDuration,
+                ease: "power2.in",
+                onUpdate: function() {
+                    updateCylinderOpacity(cylinderFadeOut.progress);
+                }
+            }, animationTimings.cylinderFadeOut);
+            
+            const baseSurfaceUntrimmedMiddleFadeIn = { progress: 0 };
+            mainTimeline.to(baseSurfaceUntrimmedMiddleFadeIn, {
+                progress: 1,
+                duration: animationTimings.fadeDuration,
+                ease: "power2.out",
+                onUpdate: function() {
+                    updateBaseSurfaceUntrimmedMiddleOpacity(baseSurfaceUntrimmedMiddleFadeIn.progress);
+                }
+            }, animationTimings.baseSurfaceUntrimmedMiddleFadeIn);
+            
+            // Phase 3: BaseSurfaceUntrimmed-Sides fade in
+            const baseSurfaceUntrimmedSidesFadeIn = { progress: 0 };
+            mainTimeline.to(baseSurfaceUntrimmedSidesFadeIn, {
+                progress: 1,
+                duration: animationTimings.fadeDuration,
+                ease: "power2.out",
+                onUpdate: function() {
+                    updateBaseSurfaceUntrimmedSidesOpacity(baseSurfaceUntrimmedSidesFadeIn.progress);
+                }
+            }, animationTimings.baseSurfaceUntrimmedSidesFadeIn);
+            
+            // Phase 4: CirclePipes fade out, PanelUnitPipe fade in
+            const circlePipesFadeOut = { progress: 1 };
+            mainTimeline.to(circlePipesFadeOut, {
+                progress: 0,
+                duration: animationTimings.fadeDuration,
+                ease: "power2.in",
+                onUpdate: function() {
+                    updateCirclePipesOpacity(circlePipesFadeOut.progress);
+                }
+            }, animationTimings.circlePipesFadeOut);
+            
+            const panelUnitPipeFadeIn = { progress: 0 };
+            mainTimeline.to(panelUnitPipeFadeIn, {
+                progress: 1,
+                duration: animationTimings.fadeDuration,
+                ease: "power2.out",
+                onUpdate: function() {
+                    updatePanelUnitPipeOpacity(panelUnitPipeFadeIn.progress);
+                }
+            }, animationTimings.panelUnitPipeFadeIn);
+            
+            // Phase 5: BaseSurfaceUntrimmed-Middle and Sides fade out, PanelUnitPipe fade out, WallOutlineExtruded and PanelUnits fade in
+            const baseSurfaceUntrimmedMiddleFadeOut = { progress: 1 };
+            mainTimeline.to(baseSurfaceUntrimmedMiddleFadeOut, {
+                progress: 0,
+                duration: animationTimings.fadeDuration,
+                ease: "power2.in",
+                onUpdate: function() {
+                    updateBaseSurfaceUntrimmedMiddleOpacity(baseSurfaceUntrimmedMiddleFadeOut.progress);
+                }
+            }, animationTimings.baseSurfaceUntrimmedMiddleFadeOut);
+            
+            const baseSurfaceUntrimmedSidesFadeOut = { progress: 1 };
+            mainTimeline.to(baseSurfaceUntrimmedSidesFadeOut, {
+                progress: 0,
+                duration: animationTimings.fadeDuration,
+                ease: "power2.in",
+                onUpdate: function() {
+                    updateBaseSurfaceUntrimmedSidesOpacity(baseSurfaceUntrimmedSidesFadeOut.progress);
+                }
+            }, animationTimings.baseSurfaceUntrimmedSidesFadeOut);
+            
+            const panelUnitPipeFadeOut = { progress: 1 };
+            mainTimeline.to(panelUnitPipeFadeOut, {
+                progress: 0,
+                duration: animationTimings.fadeDuration,
+                ease: "power2.in",
+                onUpdate: function() {
+                    updatePanelUnitPipeOpacity(panelUnitPipeFadeOut.progress);
+                }
+            }, animationTimings.panelUnitPipeFadeOut);
+            
+            // Color Panels fade in
+            const colorPanelsFadeIn = { progress: 0 };
+            mainTimeline.to(colorPanelsFadeIn, {
+                progress: 1,
+                duration: animationTimings.fadeDuration,
+                ease: "power2.out",
+                onUpdate: function() {
+                    updatePanelUnitsOpacity(colorPanelsFadeIn.progress);
+                }
+            }, animationTimings.colorPanelsFadeIn);
+            
+            // Color Panels fade out
+            const colorPanelsFadeOut = { progress: 1 };
+            mainTimeline.to(colorPanelsFadeOut, {
+                progress: 0,
+                duration: animationTimings.fadeDuration,
+                ease: "power2.in",
+                onUpdate: function() {
+                    updatePanelUnitsOpacity(colorPanelsFadeOut.progress);
+                }
+            }, animationTimings.colorPanelsFadeOut);
+            
+            // Outline fade in
+            const outlineFadeIn = { progress: 0 };
+            mainTimeline.to(outlineFadeIn, {
+                progress: 1,
+                duration: animationTimings.fadeDuration,
+                ease: "power2.out",
+                onUpdate: function() {
+                    updateWallOutlineExtrudedOpacity(outlineFadeIn.progress);
+                }
+            }, animationTimings.outlineFadeIn);
+            
+            // Outline fade out
+            const outlineFadeOut = { progress: 1 };
+            mainTimeline.to(outlineFadeOut, {
+                progress: 0,
+                duration: animationTimings.fadeDuration,
+                ease: "power2.in",
+                onUpdate: function() {
+                    updateWallOutlineExtrudedOpacity(outlineFadeOut.progress);
+                }
+            }, animationTimings.outlineFadeOut);
+            
+            // BaseSurface fade in - EXACT copy of colorPanelsFadeIn pattern
+            const baseSurfaceFadeIn = { progress: 0 };
+            mainTimeline.to(baseSurfaceFadeIn, {
+                progress: 1,
+                duration: animationTimings.fadeDuration,
+                ease: "power2.out",
+                onStart: function() {
+                    console.log(`[BaseSurface] Fade IN starting at ${animationTimings.baseSurfaceFadeIn}s`);
+                },
+                onUpdate: function() {
+                    updateBaseSurfaceOpacity(baseSurfaceFadeIn.progress);
+                },
+                onComplete: function() {
+                    console.log(`[BaseSurface] Fade IN complete, opacity should be 1.0`);
+                }
+            }, animationTimings.baseSurfaceFadeIn);
+            
+            // BaseSurface fade out - EXACT copy of colorPanelsFadeOut pattern
+            const baseSurfaceFadeOut = { progress: 1 };
+            mainTimeline.to(baseSurfaceFadeOut, {
+                progress: 0,
+                duration: animationTimings.fadeDuration,
+                ease: "power2.in",
+                onStart: function() {
+                    console.log(`[BaseSurface] Fade OUT starting at ${animationTimings.baseSurfaceFadeOut}s`);
+                },
+                onUpdate: function() {
+                    updateBaseSurfaceOpacity(baseSurfaceFadeOut.progress);
+                },
+                onComplete: function() {
+                    console.log(`[BaseSurface] Fade OUT complete, opacity should be 0.0`);
+                }
+            }, animationTimings.baseSurfaceFadeOut);
+            
+            // Glazing fade in - EXACT copy of outlineFadeIn pattern
+            const glazingFadeIn = { progress: 0 };
+            mainTimeline.to(glazingFadeIn, {
+                progress: 1,
+                duration: animationTimings.fadeDuration,
+                ease: "power2.out",
+                onStart: function() {
+                    console.log(`[Glazing] Fade IN starting at ${animationTimings.glazingFadeIn}s`);
+                },
+                onUpdate: function() {
+                    updateGlazingOpacity(glazingFadeIn.progress);
+                },
+                onComplete: function() {
+                    console.log(`[Glazing] Fade IN complete, opacity should be 1.0`);
+                }
+            }, animationTimings.glazingFadeIn);
+            
+            // Glazing fade out - EXACT copy of outlineFadeOut pattern
+            const glazingFadeOut = { progress: 1 };
+            mainTimeline.to(glazingFadeOut, {
+                progress: 0,
+                duration: animationTimings.fadeDuration,
+                ease: "power2.in",
+                onStart: function() {
+                    console.log(`[Glazing] Fade OUT starting at ${animationTimings.glazingFadeOut}s`);
+                },
+                onUpdate: function() {
+                    updateGlazingOpacity(glazingFadeOut.progress);
+                },
+                onComplete: function() {
+                    console.log(`[Glazing] Fade OUT complete, opacity should be 0.0`);
+                }
+            }, animationTimings.glazingFadeOut);
+            
+            console.log('[Animation] All animations added to timeline');
+        }
+        
+        // Animation loop (simplified - GSAP handles animations)
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Update controls for smooth camera movement
+            controls.update();
+            
+            // Render with SSAO
+            composer.render();
+        }
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        });
+        
+        // Start animation
+        animate();
+        
+        // Text overlay function (for future use)
+        window.showText = function(text, duration = 2000) {
+            const overlay = document.getElementById('text-overlay');
+            overlay.textContent = text;
+            overlay.classList.add('visible');
+            
+            if (duration > 0) {
+                setTimeout(() => {
+                    overlay.classList.remove('visible');
+                }, duration);
+            }
+        };
+        
+        // Hide text function
+        window.hideText = function() {
+            document.getElementById('text-overlay').classList.remove('visible');
+        };
+    </script>
+</body>
+</html>
+

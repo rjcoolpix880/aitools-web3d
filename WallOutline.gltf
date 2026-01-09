@@ -1,0 +1,370 @@
+{
+  "extensionsUsed": [
+    "KHR_materials_transmission",
+    "KHR_materials_clearcoat",
+    "KHR_materials_ior",
+    "KHR_materials_specular",
+    "KHR_materials_emissive_strength",
+    "KHR_texture_transform"
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 2,
+      "type": "VEC3",
+      "max": [
+        -43.539326,
+        21.488346,
+        41.175976
+      ],
+      "min": [
+        -43.539326,
+        5.4355464,
+        37.02444
+      ]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 2,
+      "type": "VEC3",
+      "max": [
+        -28.373425,
+        5.4355464,
+        41.175976
+      ],
+      "min": [
+        -43.539326,
+        5.4355464,
+        41.175976
+      ]
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5126,
+      "count": 2,
+      "type": "VEC3",
+      "max": [
+        -28.373425,
+        9.093146,
+        41.175976
+      ],
+      "min": [
+        -28.919535,
+        5.4355464,
+        40.230057
+      ]
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5126,
+      "count": 2,
+      "type": "VEC3",
+      "max": [
+        -13.444075,
+        9.093146,
+        53.874577
+      ],
+      "min": [
+        -17.522846,
+        9.093146,
+        46.809937
+      ]
+    },
+    {
+      "bufferView": 4,
+      "componentType": 5126,
+      "count": 2,
+      "type": "VEC3",
+      "max": [
+        -13.444016,
+        26.365213,
+        53.874577
+      ],
+      "min": [
+        -13.444075,
+        9.093146,
+        53.874542
+      ]
+    },
+    {
+      "bufferView": 5,
+      "componentType": 5126,
+      "count": 2,
+      "type": "VEC3",
+      "max": [
+        -13.444016,
+        26.365213,
+        53.874542
+      ],
+      "min": [
+        -20.101711,
+        26.365213,
+        42.34308
+      ]
+    },
+    {
+      "bufferView": 6,
+      "componentType": 5126,
+      "count": 2,
+      "type": "VEC3",
+      "max": [
+        -19.373554,
+        26.365213,
+        43.60432
+      ],
+      "min": [
+        -20.101711,
+        21.488346,
+        42.34308
+      ]
+    },
+    {
+      "bufferView": 7,
+      "componentType": 5126,
+      "count": 2,
+      "type": "VEC3",
+      "max": [
+        -30.770243,
+        21.488346,
+        37.02444
+      ],
+      "min": [
+        -43.539326,
+        21.488346,
+        37.02444
+      ]
+    }
+  ],
+  "asset": {
+    "version": "2.0"
+  },
+  "buffers": [
+    {
+      "uri": "data:application/octet-stream;base64,RSguwv/vrUAztCRCRSguwiLoq0EHGRRC",
+      "byteLength": 24
+    },
+    {
+      "uri": "data:application/octet-stream;base64,xvziwf/vrUAztCRCRSguwv/vrUAztCRC",
+      "byteLength": 24
+    },
+    {
+      "uri": "data:application/octet-stream;base64,NVvnwYd9EUGU6yBCxvziwf/vrUAztCRC",
+      "byteLength": 24
+    },
+    {
+      "uri": "data:application/octet-stream;base64,yi6MwYd9EUFgPTtC7hpXwYd9EUGRf1dC",
+      "byteLength": 24
+    },
+    {
+      "uri": "data:application/octet-stream;base64,7hpXwYd9EUGRf1dCsRpXwfXr0kGIf1dC",
+      "byteLength": 24
+    },
+    {
+      "uri": "data:application/octet-stream;base64,sRpXwfXr0kGIf1dCTtCgwfXr0kFQXylC",
+      "byteLength": 24
+    },
+    {
+      "uri": "data:application/octet-stream;base64,Cv2awSLoq0HTai5CTtCgwfXr0kFQXylC",
+      "byteLength": 24
+    },
+    {
+      "uri": "data:application/octet-stream;base64,RSguwiLoq0EHGRRCdSn2wSLoq0EHGRRC",
+      "byteLength": 24
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteLength": 24,
+      "target": 34962
+    },
+    {
+      "buffer": 1,
+      "byteLength": 24,
+      "target": 34962
+    },
+    {
+      "buffer": 2,
+      "byteLength": 24,
+      "target": 34962
+    },
+    {
+      "buffer": 3,
+      "byteLength": 24,
+      "target": 34962
+    },
+    {
+      "buffer": 4,
+      "byteLength": 24,
+      "target": 34962
+    },
+    {
+      "buffer": 5,
+      "byteLength": 24,
+      "target": 34962
+    },
+    {
+      "buffer": 6,
+      "byteLength": 24,
+      "target": 34962
+    },
+    {
+      "buffer": 7,
+      "byteLength": 24,
+      "target": 34962
+    }
+  ],
+  "materials": [
+    {
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0
+          },
+          "material": 0,
+          "mode": 3
+        }
+      ]
+    },
+    {
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 1
+          },
+          "material": 0,
+          "mode": 3
+        }
+      ]
+    },
+    {
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 2
+          },
+          "material": 0,
+          "mode": 3
+        }
+      ]
+    },
+    {
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 3
+          },
+          "material": 0,
+          "mode": 3
+        }
+      ]
+    },
+    {
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 4
+          },
+          "material": 0,
+          "mode": 3
+        }
+      ]
+    },
+    {
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 5
+          },
+          "material": 0,
+          "mode": 3
+        }
+      ]
+    },
+    {
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 6
+          },
+          "material": 0,
+          "mode": 3
+        }
+      ]
+    },
+    {
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 7
+          },
+          "material": 0,
+          "mode": 3
+        }
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "mesh": 0
+    },
+    {
+      "mesh": 1
+    },
+    {
+      "mesh": 2
+    },
+    {
+      "mesh": 3
+    },
+    {
+      "mesh": 4
+    },
+    {
+      "mesh": 5
+    },
+    {
+      "mesh": 6
+    },
+    {
+      "mesh": 7
+    }
+  ],
+  "samplers": [
+    {
+      "magFilter": 9729,
+      "minFilter": 9729
+    }
+  ],
+  "scene": 0,
+  "scenes": [
+    {
+      "nodes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "extensions": {}
+    }
+  ],
+  "extensions": {}
+}
