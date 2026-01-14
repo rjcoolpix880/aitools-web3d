@@ -98,6 +98,19 @@
         // Lighting - use centralized setup (ambient + directional)
         setupLighting(scene);
         
+        // Verify lighting was set up
+        console.log('[Main] After setupLighting - Scene children:', scene.children.length);
+        const lights = scene.children.filter(child => child.isLight);
+        console.log('[Main] Lights in scene:', lights.length, lights);
+        
+        // TEST: Add a simple test cube to verify lighting works
+        const testGeometry = new THREE.BoxGeometry(10, 10, 10);
+        const testMaterial = new THREE.MeshStandardMaterial({ color: 0x00ff00 }); // Bright green
+        const testCube = new THREE.Mesh(testGeometry, testMaterial);
+        testCube.position.set(0, 50, 0); // Position it high up
+        scene.add(testCube);
+        console.log('[Test] Added bright green test cube - if you see it lit, lighting works!');
+        
         // Camera controls - enable movement, zoom, rotation (no UI)
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
@@ -191,16 +204,21 @@
             const isFullyOpaque = opacity >= 1.0;
             
             baseSurface.traverse((child) => {
-                if (child.isMesh && child.material) {
-                    const materials = Array.isArray(child.material) ? child.material : [child.material];
-                    materials.forEach((material, index) => {
-                        const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
-                        const originalOpacity = baseSurfaceOriginalOpacity[key] || 1.0;
-                        material.opacity = originalOpacity * opacity;
-                        material.transparent = opacity < 1.0; // Enable transparency when not fully opaque
-                        material.depthWrite = isFullyOpaque; // Disable depth write when fading or invisible
-                        material.needsUpdate = true; // Ensure material updates
-                    });
+                if (child.isMesh) {
+                    // Disable shadow casting when transparent
+                    child.castShadow = opacity > 0;
+                    
+                    if (child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            const originalOpacity = baseSurfaceOriginalOpacity[key] || 1.0;
+                            material.opacity = originalOpacity * opacity;
+                            material.transparent = opacity < 1.0; // Enable transparency when not fully opaque
+                            material.depthWrite = isFullyOpaque; // Disable depth write when fading or invisible
+                            material.needsUpdate = true; // Ensure material updates
+                        });
+                    }
                 }
             });
         }
@@ -212,15 +230,20 @@
             const isFullyOpaque = opacity >= 1.0;
             
             wallOutlineExtruded.traverse((child) => {
-                if (child.isMesh && child.material) {
-                    const materials = Array.isArray(child.material) ? child.material : [child.material];
-                    materials.forEach((material, index) => {
-                        const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
-                        const originalOpacity = wallOutlineExtrudedOriginalOpacity[key] || 1.0;
-                        material.opacity = originalOpacity * opacity;
-                        material.depthWrite = isFullyOpaque; // Disable depth write when fading or invisible
-                        material.needsUpdate = true; // Ensure material updates
-                    });
+                if (child.isMesh) {
+                    // Disable shadow casting when transparent
+                    child.castShadow = opacity > 0;
+                    
+                    if (child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            const originalOpacity = wallOutlineExtrudedOriginalOpacity[key] || 1.0;
+                            material.opacity = originalOpacity * opacity;
+                            material.depthWrite = isFullyOpaque; // Disable depth write when fading or invisible
+                            material.needsUpdate = true; // Ensure material updates
+                        });
+                    }
                 }
             });
         }
@@ -232,15 +255,20 @@
             const isFullyOpaque = opacity >= 1.0;
             
             panelUnits.traverse((child) => {
-                if (child.isMesh && child.material) {
-                    const materials = Array.isArray(child.material) ? child.material : [child.material];
-                    materials.forEach((material, index) => {
-                        const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
-                        const originalOpacity = panelUnitsOriginalOpacity[key] || 1.0;
-                        material.opacity = originalOpacity * opacity;
-                        material.depthWrite = isFullyOpaque; // Disable depth write when fading or invisible
-                        material.needsUpdate = true; // Ensure material updates
-                    });
+                if (child.isMesh) {
+                    // Disable shadow casting when transparent
+                    child.castShadow = opacity > 0;
+                    
+                    if (child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            const originalOpacity = panelUnitsOriginalOpacity[key] || 1.0;
+                            material.opacity = originalOpacity * opacity;
+                            material.depthWrite = isFullyOpaque; // Disable depth write when fading or invisible
+                            material.needsUpdate = true; // Ensure material updates
+                        });
+                    }
                 }
             });
         }
@@ -255,16 +283,21 @@
             const isFullyOpaque = opacity >= 1.0;
             
             glazing.traverse((child) => {
-                if (child.isMesh && child.material) {
-                    const materials = Array.isArray(child.material) ? child.material : [child.material];
-                    materials.forEach((material, index) => {
-                        const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
-                        const originalOpacity = glazingOriginalOpacity[key] || 1.0;
-                        material.opacity = originalOpacity * opacity;
-                        material.transparent = opacity < 1.0; // Enable transparency when not fully opaque
-                        material.depthWrite = isFullyOpaque; // Disable depth write when fading or invisible
-                        material.needsUpdate = true; // Ensure material updates
-                    });
+                if (child.isMesh) {
+                    // Disable shadow casting when transparent
+                    child.castShadow = opacity > 0;
+                    
+                    if (child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            const originalOpacity = glazingOriginalOpacity[key] || 1.0;
+                            material.opacity = originalOpacity * opacity;
+                            material.transparent = opacity < 1.0; // Enable transparency when not fully opaque
+                            material.depthWrite = isFullyOpaque; // Disable depth write when fading or invisible
+                            material.needsUpdate = true; // Ensure material updates
+                        });
+                    }
                 }
             });
         }
@@ -278,16 +311,21 @@
             if (!cylinder) return;
             const isFullyOpaque = opacity >= 1.0;
             cylinder.traverse((child) => {
-                if (child.isMesh && child.material) {
-                    const materials = Array.isArray(child.material) ? child.material : [child.material];
-                    materials.forEach((material, index) => {
-                        const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
-                        const originalOpacity = cylinderOriginalOpacity[key] || 1.0;
-                        material.opacity = originalOpacity * opacity;
-                        material.transparent = opacity < 1.0;
-                        material.depthWrite = isFullyOpaque;
-                        material.needsUpdate = true;
-                    });
+                if (child.isMesh) {
+                    // Disable shadow casting when transparent
+                    child.castShadow = opacity > 0;
+                    
+                    if (child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            const originalOpacity = cylinderOriginalOpacity[key] || 1.0;
+                            material.opacity = originalOpacity * opacity;
+                            material.transparent = opacity < 1.0;
+                            material.depthWrite = isFullyOpaque;
+                            material.needsUpdate = true;
+                        });
+                    }
                 }
             });
         }
@@ -296,16 +334,21 @@
             if (!circlePipes) return;
             const isFullyOpaque = opacity >= 1.0;
             circlePipes.traverse((child) => {
-                if (child.isMesh && child.material) {
-                    const materials = Array.isArray(child.material) ? child.material : [child.material];
-                    materials.forEach((material, index) => {
-                        const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
-                        const originalOpacity = circlePipesOriginalOpacity[key] || 1.0;
-                        material.opacity = originalOpacity * opacity;
-                        material.transparent = opacity < 1.0;
-                        material.depthWrite = isFullyOpaque;
-                        material.needsUpdate = true;
-                    });
+                if (child.isMesh) {
+                    // Disable shadow casting when transparent
+                    child.castShadow = opacity > 0;
+                    
+                    if (child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            const originalOpacity = circlePipesOriginalOpacity[key] || 1.0;
+                            material.opacity = originalOpacity * opacity;
+                            material.transparent = opacity < 1.0;
+                            material.depthWrite = isFullyOpaque;
+                            material.needsUpdate = true;
+                        });
+                    }
                 }
             });
         }
@@ -314,16 +357,21 @@
             if (!baseSurfaceUntrimmedMiddle) return;
             const isFullyOpaque = opacity >= 1.0;
             baseSurfaceUntrimmedMiddle.traverse((child) => {
-                if (child.isMesh && child.material) {
-                    const materials = Array.isArray(child.material) ? child.material : [child.material];
-                    materials.forEach((material, index) => {
-                        const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
-                        const originalOpacity = baseSurfaceUntrimmedMiddleOriginalOpacity[key] || 1.0;
-                        material.opacity = originalOpacity * opacity;
-                        material.transparent = opacity < 1.0;
-                        material.depthWrite = isFullyOpaque;
-                        material.needsUpdate = true;
-                    });
+                if (child.isMesh) {
+                    // Disable shadow casting when transparent
+                    child.castShadow = opacity > 0;
+                    
+                    if (child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            const originalOpacity = baseSurfaceUntrimmedMiddleOriginalOpacity[key] || 1.0;
+                            material.opacity = originalOpacity * opacity;
+                            material.transparent = opacity < 1.0;
+                            material.depthWrite = isFullyOpaque;
+                            material.needsUpdate = true;
+                        });
+                    }
                 }
             });
         }
@@ -332,16 +380,21 @@
             if (!baseSurfaceUntrimmedSides) return;
             const isFullyOpaque = opacity >= 1.0;
             baseSurfaceUntrimmedSides.traverse((child) => {
-                if (child.isMesh && child.material) {
-                    const materials = Array.isArray(child.material) ? child.material : [child.material];
-                    materials.forEach((material, index) => {
-                        const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
-                        const originalOpacity = baseSurfaceUntrimmedSidesOriginalOpacity[key] || 1.0;
-                        material.opacity = originalOpacity * opacity;
-                        material.transparent = opacity < 1.0;
-                        material.depthWrite = isFullyOpaque;
-                        material.needsUpdate = true;
-                    });
+                if (child.isMesh) {
+                    // Disable shadow casting when transparent
+                    child.castShadow = opacity > 0;
+                    
+                    if (child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            const originalOpacity = baseSurfaceUntrimmedSidesOriginalOpacity[key] || 1.0;
+                            material.opacity = originalOpacity * opacity;
+                            material.transparent = opacity < 1.0;
+                            material.depthWrite = isFullyOpaque;
+                            material.needsUpdate = true;
+                        });
+                    }
                 }
             });
         }
@@ -350,16 +403,21 @@
             if (!panelUnitPipe) return;
             const isFullyOpaque = opacity >= 1.0;
             panelUnitPipe.traverse((child) => {
-                if (child.isMesh && child.material) {
-                    const materials = Array.isArray(child.material) ? child.material : [child.material];
-                    materials.forEach((material, index) => {
-                        const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
-                        const originalOpacity = panelUnitPipeOriginalOpacity[key] || 1.0;
-                        material.opacity = originalOpacity * opacity;
-                        material.transparent = opacity < 1.0;
-                        material.depthWrite = isFullyOpaque;
-                        material.needsUpdate = true;
-                    });
+                if (child.isMesh) {
+                    // Disable shadow casting when transparent
+                    child.castShadow = opacity > 0;
+                    
+                    if (child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            const originalOpacity = panelUnitPipeOriginalOpacity[key] || 1.0;
+                            material.opacity = originalOpacity * opacity;
+                            material.transparent = opacity < 1.0;
+                            material.depthWrite = isFullyOpaque;
+                            material.needsUpdate = true;
+                        });
+                    }
                 }
             });
         }
@@ -395,11 +453,9 @@
                             baseSurfaceOriginalOpacity[key] = material.opacity !== undefined ? material.opacity : 1.0;
                             material.transparent = true; // Enable transparency
                             material.opacity = 0.0; // Start invisible
-                            console.log(`[BaseSurface] Set initial opacity to 0.0 for material ${key}, original: ${baseSurfaceOriginalOpacity[key]}`);
                         });
                     }
                 });
-                console.log('[BaseSurface] Initial setup complete, opacity should be 0.0');
                 
                 // Force immediate opacity update to ensure it's invisible
                 updateBaseSurfaceOpacity(0);
@@ -432,8 +488,8 @@
                 panelUnits = gltf.scene;
                 panelUnits.position.set(0, 0, 0); // Fixed at origin, no movement
                 
-                // Configure model for rendering (all config is in centralized function)
-                configureModelForRendering(panelUnits);
+                // Configure model for rendering - preserve colors from GLTF file
+                configureModelForRendering(panelUnits, true); // true = preserve colors
                 
                 // Store original opacity values and enable transparency
                 panelUnits.traverse((child) => {
@@ -537,7 +593,6 @@
                                 material.transparent = true; // Still need transparency for fade animation
                                 material.opacity = 0.0; // Start invisible
                                 material.needsUpdate = true; // Ensure material updates
-                                console.log(`[Glazing] Set initial opacity to 0.0 for mesh ${key}, original: ${glazingOriginalOpacity[key]}`);
                             }
                         });
                     }
@@ -551,12 +606,10 @@
                                 material.transparent = true;
                                 material.opacity = 0.0;
                                 material.needsUpdate = true;
-                                console.log(`[Glazing] Set initial opacity to 0.0 for line ${key}, original: ${glazingOriginalOpacity[key]}`);
                             }
                         });
                     }
                 });
-                console.log('[Glazing] Initial setup complete - entire GLTF scene opacity set to 0.0');
                 
                 // Force immediate opacity update to ensure it's invisible
                 updateGlazingOpacity(0);
@@ -597,12 +650,28 @@
                         const materials = Array.isArray(child.material) ? child.material : [child.material];
                         materials.forEach((material) => {
                             material.color.set(baseSurfaceColor); // Set color first
+                            console.log(`[Cylinder] Set material color to: #${baseSurfaceColor.toString(16)}, actual: #${material.color.getHexString()}`);
                         });
                     }
                 });
                 
                 // Now configure for rendering (this will set emissive based on the color we just set)
                 configureModelForRendering(cylinder);
+                
+                // Verify color after configureModelForRendering - also check roughness/metalness
+                cylinder.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material) => {
+                            console.log(`[Cylinder] After configureModelForRendering:`, {
+                                color: `#${material.color.getHexString()}`,
+                                RGB: `(${material.color.r.toFixed(3)}, ${material.color.g.toFixed(3)}, ${material.color.b.toFixed(3)})`,
+                                roughness: material.roughness !== undefined ? material.roughness : 'undefined',
+                                metalness: material.metalness !== undefined ? material.metalness : 'undefined'
+                            });
+                        });
+                    }
+                });
                 
                 // Store opacity and set transparency
                 cylinder.traverse((child) => {
@@ -970,14 +1039,8 @@
                 progress: 1,
                 duration: animationTimings.fadeDuration,
                 ease: "power2.out",
-                onStart: function() {
-                    console.log(`[BaseSurface] Fade IN starting at ${animationTimings.baseSurfaceFadeIn}s`);
-                },
                 onUpdate: function() {
                     updateBaseSurfaceOpacity(baseSurfaceFadeIn.progress);
-                },
-                onComplete: function() {
-                    console.log(`[BaseSurface] Fade IN complete, opacity should be 1.0`);
                 }
             }, animationTimings.baseSurfaceFadeIn);
             
@@ -987,14 +1050,8 @@
                 progress: 0,
                 duration: animationTimings.fadeDuration,
                 ease: "power2.in",
-                onStart: function() {
-                    console.log(`[BaseSurface] Fade OUT starting at ${animationTimings.baseSurfaceFadeOut}s`);
-                },
                 onUpdate: function() {
                     updateBaseSurfaceOpacity(baseSurfaceFadeOut.progress);
-                },
-                onComplete: function() {
-                    console.log(`[BaseSurface] Fade OUT complete, opacity should be 0.0`);
                 }
             }, animationTimings.baseSurfaceFadeOut);
             
@@ -1004,14 +1061,8 @@
                 progress: 1,
                 duration: animationTimings.fadeDuration,
                 ease: "power2.out",
-                onStart: function() {
-                    console.log(`[Glazing] Fade IN starting at ${animationTimings.glazingFadeIn}s`);
-                },
                 onUpdate: function() {
                     updateGlazingOpacity(glazingFadeIn.progress);
-                },
-                onComplete: function() {
-                    console.log(`[Glazing] Fade IN complete, opacity should be 1.0`);
                 }
             }, animationTimings.glazingFadeIn);
             
@@ -1021,14 +1072,8 @@
                 progress: 0,
                 duration: animationTimings.fadeDuration,
                 ease: "power2.in",
-                onStart: function() {
-                    console.log(`[Glazing] Fade OUT starting at ${animationTimings.glazingFadeOut}s`);
-                },
                 onUpdate: function() {
                     updateGlazingOpacity(glazingFadeOut.progress);
-                },
-                onComplete: function() {
-                    console.log(`[Glazing] Fade OUT complete, opacity should be 0.0`);
                 }
             }, animationTimings.glazingFadeOut);
             
