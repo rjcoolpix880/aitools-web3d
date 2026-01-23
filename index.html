@@ -24,19 +24,15 @@
         
         #text-overlay {
             position: absolute;
-            top: 20px;
-            left: 20px;
-            color: white;
-            font-size: 24px;
-            font-weight: bold;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
-            opacity: 0;
-            transition: opacity 0.5s ease-in-out;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #555;
+            font-size: 16px;
+            font-weight: normal;
+            text-align: center;
             pointer-events: none;
-        }
-        
-        #text-overlay.visible {
-            opacity: 1;
+            z-index: 100;
         }
         
         #loading {
@@ -69,6 +65,7 @@
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
         import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
         import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -89,7 +86,8 @@
         );
         // Position camera to view the models - zoomed out to see more
         // Based on model center at (-28.49, 15.90, 45.45), zoom out significantly
-        camera.position.set(-100, 100, 150);
+        //Left/Right, UP/Down, Forward/Backward )
+        camera.position.set(-75, 50, 100);
         camera.lookAt(-30, 20, 50);
         
         // Renderer - use centralized setup
@@ -103,14 +101,6 @@
         const lights = scene.children.filter(child => child.isLight);
         console.log('[Main] Lights in scene:', lights.length, lights);
         
-        // TEST: Add a simple test cube to verify lighting works
-        const testGeometry = new THREE.BoxGeometry(10, 10, 10);
-        const testMaterial = new THREE.MeshStandardMaterial({ color: 0x00ff00 }); // Bright green
-        const testCube = new THREE.Mesh(testGeometry, testMaterial);
-        testCube.position.set(0, 50, 0); // Position it high up
-        scene.add(testCube);
-        console.log('[Test] Added bright green test cube - if you see it lit, lighting works!');
-        
         // Camera controls - enable movement, zoom, rotation (no UI)
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
@@ -123,8 +113,11 @@
         // Post-processing for SSAO (Screen Space Ambient Occlusion)
         const composer = setupSSAO(scene, camera, renderer, SSAOPass, EffectComposer, RenderPass, OutputPass);
         
-        // Loader
+        // Loader with Draco support for compressed GLB files
         const loader = new GLTFLoader();
+        const dracoLoader = new DRACOLoader();
+        dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/');
+        loader.setDRACOLoader(dracoLoader);
         
         // Render order configuration - higher values are drawn last (on top)
         const renderOrder = {
@@ -144,6 +137,8 @@
         let glazingOriginalOpacity = {};
         
         // New geometry variables
+        let cylinderStraight = null;
+        let cylinderStraightOriginalOpacity = {};
         let cylinder = null;
         let cylinderOriginalOpacity = {};
         let circlePipes = null;
@@ -154,41 +149,65 @@
         let baseSurfaceUntrimmedSidesOriginalOpacity = {};
         let panelUnitPipe = null;
         let panelUnitPipeOriginalOpacity = {};
+        let subpanels = null;
+        let subpanelsOriginalOpacity = {};
+        let subpanelsColored = null;
+        let subpanelsColoredOriginalOpacity = {};
+        let simpleBuilding = null;
+        let simpleBuildingOriginalOpacity = {};
+        let attractorPipe = null;
+        let attractorPipeOriginalOpacity = {};
+        let subpanelsOutlinePipe = null;
+        let subpanelsOutlinePipeOriginalOpacity = {};
         
-        // Animation timing configuration - simple start times for each fade
-        // Sequence: cylinder/circlePipes → baseSurfaceUntrimmed-middle → baseSurfaceUntrimmed-sides → panelUnitPipe → wallOutline/panelUnits → glazing/baseSurface
-        const animationTimings = {
-            fadeDuration: 1, // Duration for fade in/out transitions (1 second)
+        // Simple step-based animation configuration
+        const animationConfig = {
+            stepTiming: 2,      // How long each step lasts (in seconds)
+            fadeTiming: 1,      // How long fades take (in seconds)
             
-            // Phase 1: On cylinder and circle pipes
-            cylinderFadeIn: 0,
-            cylinderFadeOut: 2,        // Off cylinder
-            circlePipesFadeIn: 0,
-            circlePipesFadeOut: 6,    // Off circle pipes
-            
-            // Phase 2: On basesurfaceuntrimmed-middle (when cylinder goes off)
-            baseSurfaceUntrimmedMiddleFadeIn: 2,
-            baseSurfaceUntrimmedMiddleFadeOut: 8,  // Off basesurface-middle
-            
-            // Phase 3: On basesurfaceuntrimmed-sides
-            baseSurfaceUntrimmedSidesFadeIn: 4,
-            baseSurfaceUntrimmedSidesFadeOut: 8,   // Off basesurface-side
-            
-            // Phase 4: On panelunitpipe (when circle pipes go off)
-            panelUnitPipeFadeIn: 6,
-            panelUnitPipeFadeOut: 10,
-            
-            // Phase 5: On walloutlineextruded and panelunits colored
-            outlineFadeIn: 8,
-            outlineFadeOut: 10,
-            colorPanelsFadeIn: 8,
-            colorPanelsFadeOut: 10,    // Off panelunits colored
-            
-            // Phase 6: On glazing and basesurface (when panelunits go off)
-            glazingFadeIn: 10,
-            glazingFadeOut: 12,
-            baseSurfaceFadeIn: 10,
-            baseSurfaceFadeOut: 12
+            // Define what's visible at each step - models and text on same line for easy editing
+            // Mapping: Circles → circlePipes, Cylinder → cylinder, Base Surface - Untrimmed → baseSurfaceUntrimmedMiddle + baseSurfaceUntrimmedSides
+            // Panel Units - Outlines → panelUnitPipe, Panel Units - Colored → panelUnits
+            // Sub Panels - Outlines / Sub Panels → subpanels, Sub Panels - Colored → subpanelsColored
+            // Wall-Outline-Extruded → wallOutlineExtruded, Glazing → glazing, simple model → simpleBuilding
+            steps: [
+                { models: ['cylinderStraight'], text: 'Initial Cylinder Structure' },
+                { models: ['circlePipes', 'cylinder'], text: 'Skew Cylinder' },
+                { models: ['circlePipes', 'baseSurfaceUntrimmedMiddle'], text: 'Trim section of cylinder' },
+                { models: ['circlePipes', 'baseSurfaceUntrimmedMiddle', 'baseSurfaceUntrimmedSides'], text: 'Extend sides' },
+                { models: ['baseSurfaceUntrimmedMiddle', 'baseSurfaceUntrimmedSides', 'panelUnitPipe' ], text: 'Trim into repeating units' },
+                { models: ['baseSurfaceUntrimmedMiddle', 'baseSurfaceUntrimmedSides', 'panelUnitPipe', 'simpleBuilding'], text: 'Fit onto building' },
+                { models: ['panelUnits', 'panelUnitPipe', 'simpleBuilding'], text: 'Each color represents a unique unit shape' },
+                { models: ['baseSurfaceUntrimmedMiddle', 'baseSurfaceUntrimmedSides', 'simpleBuilding', 'panelUnitPipe', 'subpanelsOutlinePipe'], text: 'Each unit is subdivided into smaller panels' },
+                { models: ['baseSurfaceUntrimmedMiddle', 'baseSurfaceUntrimmedSides', 'simpleBuilding', 'panelUnitPipe', 'subpanelsOutlinePipe','attractorPipe'], text: 'Attractors are created' },
+                { models: ['subpanelsColored', 'simpleBuilding', 'panelUnitPipe', 'subpanelsOutlinePipe','attractorPipe'], text: 'Distance is calulated from the attractors to each panel' },
+                { models: ['subpanelsColored', 'simpleBuilding', 'panelUnitPipe', 'subpanelsOutlinePipe'], text: 'Distance is calulated from the attractors to each panel' },
+                { models: ['subpanelsColored', 'simpleBuilding', 'panelUnitPipe', 'subpanelsOutlinePipe', 'glazing'], text: 'The distance sets the size of the glazing in the panel' },
+                { models: ['subpanels', 'simpleBuilding', 'panelUnitPipe', 'subpanelsOutlinePipe', 'glazing'], text: 'The final glazing sizes' },
+
+
+
+                { models: [], text: '' }
+            ]
+        };
+        
+        // Map step names to model variables and their update functions
+        const modelMap = {
+            'cylinderStraight': { model: () => cylinderStraight, update: updateCylinderStraightOpacity },
+            'cylinder': { model: () => cylinder, update: updateCylinderOpacity },
+            'circlePipes': { model: () => circlePipes, update: updateCirclePipesOpacity },
+            'baseSurfaceUntrimmedMiddle': { model: () => baseSurfaceUntrimmedMiddle, update: updateBaseSurfaceUntrimmedMiddleOpacity },
+            'baseSurfaceUntrimmedSides': { model: () => baseSurfaceUntrimmedSides, update: updateBaseSurfaceUntrimmedSidesOpacity },
+            'panelUnitPipe': { model: () => panelUnitPipe, update: updatePanelUnitPipeOpacity },
+            'subpanels': { model: () => subpanels, update: updateSubpanelsOpacity },
+            'subpanelsColored': { model: () => subpanelsColored, update: updateSubpanelsColoredOpacity },
+            'subpanelsOutlinePipe': { model: () => subpanelsOutlinePipe, update: updateSubpanelsOutlinePipeOpacity },
+            'panelUnits': { model: () => panelUnits, update: updatePanelUnitsOpacity },
+            'wallOutlineExtruded': { model: () => wallOutlineExtruded, update: updateWallOutlineExtrudedOpacity },
+            'glazing': { model: () => glazing, update: updateGlazingOpacity },
+            'baseSurface': { model: () => baseSurface, update: updateBaseSurfaceOpacity },
+            'simpleBuilding': { model: () => simpleBuilding, update: updateSimpleBuildingOpacity },
+            'attractorPipe': { model: () => attractorPipe, update: updateAttractorPipeOpacity }
         };
         
         // GSAP timeline for all animations
@@ -307,6 +326,29 @@
         let wallOutlineExtrudedOriginalOpacity = {};
         
         // Helper functions for new geometry (same pattern as existing ones)
+        function updateCylinderStraightOpacity(opacity) {
+            if (!cylinderStraight) return;
+            const isFullyOpaque = opacity >= 1.0;
+            cylinderStraight.traverse((child) => {
+                if (child.isMesh) {
+                    // Disable shadow casting when transparent
+                    child.castShadow = opacity > 0;
+                    
+                    if (child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            const originalOpacity = cylinderStraightOriginalOpacity[key] || 1.0;
+                            material.opacity = originalOpacity * opacity;
+                            material.transparent = opacity < 1.0;
+                            material.depthWrite = isFullyOpaque;
+                            material.needsUpdate = true;
+                        });
+                    }
+                }
+            });
+        }
+        
         function updateCylinderOpacity(opacity) {
             if (!cylinder) return;
             const isFullyOpaque = opacity >= 1.0;
@@ -422,6 +464,117 @@
             });
         }
         
+        function updateSubpanelsOpacity(opacity) {
+            if (!subpanels) return;
+            const isFullyOpaque = opacity >= 1.0;
+            subpanels.traverse((child) => {
+                if (child.isMesh) {
+                    // Disable shadow casting when transparent
+                    child.castShadow = opacity > 0;
+                    
+                    if (child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            const originalOpacity = subpanelsOriginalOpacity[key] || 1.0;
+                            material.opacity = originalOpacity * opacity;
+                            material.transparent = opacity < 1.0;
+                            material.depthWrite = isFullyOpaque;
+                            material.needsUpdate = true;
+                        });
+                    }
+                }
+            });
+        }
+        
+        function updateSubpanelsColoredOpacity(opacity) {
+            if (!subpanelsColored) return;
+            const isFullyOpaque = opacity >= 1.0;
+            subpanelsColored.traverse((child) => {
+                if (child.isMesh) {
+                    // Disable shadow casting when transparent
+                    child.castShadow = opacity > 0;
+                    
+                    if (child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            const originalOpacity = subpanelsColoredOriginalOpacity[key] || 1.0;
+                            material.opacity = originalOpacity * opacity;
+                            material.transparent = opacity < 1.0;
+                            material.depthWrite = isFullyOpaque;
+                            material.needsUpdate = true;
+                        });
+                    }
+                }
+            });
+        }
+        
+        function updateSimpleBuildingOpacity(opacity) {
+            if (!simpleBuilding) return;
+            const isFullyOpaque = opacity >= 1.0;
+            simpleBuilding.traverse((child) => {
+                if (child.isMesh) {
+                    // Disable shadow casting when transparent
+                    child.castShadow = opacity > 0;
+                    
+                    if (child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            const originalOpacity = simpleBuildingOriginalOpacity[key] || 1.0;
+                            material.opacity = originalOpacity * opacity;
+                            material.transparent = opacity < 1.0;
+                            material.depthWrite = isFullyOpaque;
+                            material.needsUpdate = true;
+                        });
+                    }
+                }
+            });
+        }
+        
+        function updateAttractorPipeOpacity(opacity) {
+            if (!attractorPipe) return;
+            const isFullyOpaque = opacity >= 1.0;
+            attractorPipe.traverse((child) => {
+                if (child.isMesh) {
+                    child.castShadow = opacity > 0;
+                    if (child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            const originalOpacity = attractorPipeOriginalOpacity[key] || 1.0;
+                            material.opacity = originalOpacity * opacity;
+                            material.transparent = opacity < 1.0;
+                            material.depthWrite = isFullyOpaque;
+                            material.needsUpdate = true;
+                        });
+                    }
+                }
+            });
+        }
+        
+        function updateSubpanelsOutlinePipeOpacity(opacity) {
+            if (!subpanelsOutlinePipe) return;
+            const isFullyOpaque = opacity >= 1.0;
+            subpanelsOutlinePipe.traverse((child) => {
+                if (child.isMesh) {
+                    child.castShadow = opacity > 0;
+                    if (child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            const originalOpacity = subpanelsOutlinePipeOriginalOpacity[key] || 1.0;
+                            material.opacity = originalOpacity * opacity;
+                            material.transparent = opacity < 1.0;
+                            material.depthWrite = isFullyOpaque;
+                            material.needsUpdate = true;
+                        });
+                    }
+                }
+            });
+        }
+        
         // Load BaseSurface (static, fixed at origin)
         loader.load(
             './BaseSurface.gltf',
@@ -483,7 +636,7 @@
         
         // Load PanelUnitsColored (animated)
         loader.load(
-            './PanelUnitsColored.gltf',
+            './PanelUnitsColored.glb',
             (gltf) => {
                 panelUnits = gltf.scene;
                 panelUnits.position.set(0, 0, 0); // Fixed at origin, no movement
@@ -571,7 +724,7 @@
         
         // Load Glazing (animates 2 seconds after PanelUnits, same path)
         loader.load(
-            './glazing.gltf',
+            './glazing.glb',
             (gltf) => {
                 glazing = gltf.scene;
                 glazing.position.set(0, 0, 0); // Fixed at origin, no movement
@@ -589,7 +742,7 @@
                                 const key = object.uuid;
                                 glazingOriginalOpacity[key] = 1.0; // Store as fully opaque
                                 // Set to solid white
-                                material.color.set(0xffffff); // White color
+                                material.color.set(0x00ffff); // White color
                                 material.transparent = true; // Still need transparency for fade animation
                                 material.opacity = 0.0; // Start invisible
                                 material.needsUpdate = true; // Ensure material updates
@@ -635,9 +788,68 @@
             }
         );
         
+        // Load CylinderStraight (first, before cylinder)
+        loader.load(
+            './CylinderStraight.glb',
+            (gltf) => {
+                cylinderStraight = gltf.scene;
+                cylinderStraight.position.set(0, 0, 0);
+                
+                // Set material color BEFORE configureModelForRendering so emissive uses correct color
+                // Use same color as BaseSurface
+                const baseSurfaceColor = 0xd4d4d4; // Light gray color (same as BaseSurface)
+                cylinderStraight.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material) => {
+                            material.color.set(baseSurfaceColor); // Set color first
+                            console.log(`[CylinderStraight] Set material color to: #${baseSurfaceColor.toString(16)}, actual: #${material.color.getHexString()}`);
+                        });
+                    }
+                });
+                
+                // Now configure for rendering (this will set emissive based on the color we just set)
+                configureModelForRendering(cylinderStraight);
+                
+                // Verify color after configureModelForRendering - also check roughness/metalness
+                cylinderStraight.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material) => {
+                            console.log(`[CylinderStraight] After configureModelForRendering:`, {
+                                color: `#${material.color.getHexString()}`,
+                                RGB: `(${material.color.r.toFixed(3)}, ${material.color.g.toFixed(3)}, ${material.color.b.toFixed(3)})`,
+                                roughness: material.roughness !== undefined ? material.roughness : 'undefined',
+                                metalness: material.metalness !== undefined ? material.metalness : 'undefined'
+                            });
+                        });
+                    }
+                });
+                
+                // Store opacity and set transparency
+                cylinderStraight.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            cylinderStraightOriginalOpacity[key] = material.opacity !== undefined ? material.opacity : 1.0;
+                            material.transparent = true;
+                            material.opacity = 0.0;
+                        });
+                    }
+                });
+                updateCylinderStraightOpacity(0);
+                scene.add(cylinderStraight);
+                console.log('CylinderStraight loaded');
+                checkModelsLoaded();
+            },
+            undefined,
+            (error) => console.error('Error loading CylinderStraight:', error)
+        );
+        
         // Load Cylinder
         loader.load(
-            './Cylinder.gltf',
+            './Cylinder.glb',
             (gltf) => {
                 cylinder = gltf.scene;
                 cylinder.position.set(0, 0, 0);
@@ -696,7 +908,7 @@
         
         // Load CirclePipes
         loader.load(
-            './CirlesPipe.gltf',
+            './CirlesPipe.glb',
             (gltf) => {
                 circlePipes = gltf.scene;
                 circlePipes.position.set(0, 0, 0);
@@ -724,7 +936,7 @@
         
         // Load BaseSurfaceUntrimmed-Middle
         loader.load(
-            './BaseSurfaceUntrimmed-middle.gltf',
+            './BaseSurfaceUntrimmed-middle.glb',
             (gltf) => {
                 baseSurfaceUntrimmedMiddle = gltf.scene;
                 baseSurfaceUntrimmedMiddle.position.set(0, 0, 0);
@@ -766,7 +978,7 @@
         
         // Load BaseSurfaceUntrimmed-Sides
         loader.load(
-            './BaseSurfaceUntrimmed-sides.gltf',
+            './BaseSurfaceUntrimmed-sides.glb',
             (gltf) => {
                 baseSurfaceUntrimmedSides = gltf.scene;
                 baseSurfaceUntrimmedSides.position.set(0, 0, 0);
@@ -808,7 +1020,7 @@
         
         // Load PanelUnitPipe
         loader.load(
-            './PanelUnitsPipe.gltf',
+            './PanelUnitsPipe.glb',
             (gltf) => {
                 panelUnitPipe = gltf.scene;
                 panelUnitPipe.position.set(0, 0, 0);
@@ -834,250 +1046,508 @@
             (error) => console.error('Error loading PanelUnitPipe:', error)
         );
         
-        // Check if all models are loaded
+        // Load Subpanels
+        loader.load(
+            './subpanels.glb',
+            (gltf) => {
+                subpanels = gltf.scene;
+                subpanels.position.set(0, 0, 0);
+                configureModelForRendering(subpanels);
+                subpanels.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            subpanelsOriginalOpacity[key] = material.opacity !== undefined ? material.opacity : 1.0;
+                            material.transparent = true;
+                            material.opacity = 0.0;
+                        });
+                    }
+                });
+                updateSubpanelsOpacity(0);
+                scene.add(subpanels);
+                console.log('Subpanels loaded');
+                checkModelsLoaded();
+            },
+            undefined,
+            (error) => console.error('Error loading Subpanels:', error)
+        );
+        
+        // Load SubpanelsColored
+        loader.load(
+            './subpanelsColored.glb',
+            (gltf) => {
+                subpanelsColored = gltf.scene;
+                subpanelsColored.position.set(0, 0, 0);
+                
+                // Configure model for rendering - preserve colors from GLTF file
+                configureModelForRendering(subpanelsColored, true); // true = preserve colors
+                
+                subpanelsColored.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            subpanelsColoredOriginalOpacity[key] = material.opacity !== undefined ? material.opacity : 1.0;
+                            material.transparent = true;
+                            material.opacity = 0.0;
+                        });
+                    }
+                });
+                updateSubpanelsColoredOpacity(0);
+                scene.add(subpanelsColored);
+                console.log('SubpanelsColored loaded');
+                checkModelsLoaded();
+            },
+            undefined,
+            (error) => console.error('Error loading SubpanelsColored:', error)
+        );
+        
+        // Load SimpleBuilding (controlled by step system)
+        loader.load(
+            './SimpleBuilding.glb',
+            (gltf) => {
+                simpleBuilding = gltf.scene;
+                simpleBuilding.position.set(0, 0, -0.5); //slight shift so its not overlapping and cliping
+                
+                // Configure model for rendering
+                configureModelForRendering(simpleBuilding);
+                
+                // Set material color AFTER configureModelForRendering (since it replaces materials)
+                const simpleBuildingColor = 0xffffff; // Change this hex color value to set the color
+                simpleBuilding.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            // Store original opacity
+                            simpleBuildingOriginalOpacity[key] = material.opacity !== undefined ? material.opacity : 1.0;
+                            material.color.set(simpleBuildingColor); // Set color after material is created
+                            material.transparent = true; // Enable transparency for fade animation
+                            material.opacity = 0.0; // Start invisible
+                        });
+                    }
+                });
+                
+                // Force immediate opacity update to ensure it's invisible
+                updateSimpleBuildingOpacity(0);
+                
+                scene.add(simpleBuilding);
+                console.log('SimpleBuilding loaded (starts invisible)');
+                checkModelsLoaded();
+            },
+            undefined,
+            (error) => console.error('Error loading SimpleBuilding:', error)
+        );
+        
+        // Load AttractorPipe
+        loader.load(
+            './attractorsPipe.glb',
+            (gltf) => {
+                attractorPipe = gltf.scene;
+                attractorPipe.position.set(0, 0, 0);
+                configureModelForRendering(attractorPipe);
+                attractorPipe.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            attractorPipeOriginalOpacity[key] = material.opacity !== undefined ? material.opacity : 1.0;
+                            material.color.set(0xff00ff); // Magenta color
+                            material.transparent = true;
+                            material.opacity = 0.0;
+                            material.depthWrite = false; // Disable depth write when invisible
+                            material.needsUpdate = true; // Force material update
+                        });
+                    }
+                });
+                scene.add(attractorPipe);
+                updateAttractorPipeOpacity(0);
+                console.log('AttractorPipe loaded');
+                checkModelsLoaded();
+            },
+            undefined,
+            (error) => {
+                console.warn('attractorPipe.glb not found - this model will be skipped. Error:', error);
+                checkModelsLoaded();
+            }
+        );
+        
+        // Load SubpanelsOutlinePipe
+        loader.load(
+            './subpanelsOutline-Pipe.glb',
+            (gltf) => {
+                subpanelsOutlinePipe = gltf.scene;
+                subpanelsOutlinePipe.position.set(0, 0, 0);
+                configureModelForRendering(subpanelsOutlinePipe);
+                subpanelsOutlinePipe.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            subpanelsOutlinePipeOriginalOpacity[key] = material.opacity !== undefined ? material.opacity : 1.0;
+                            material.color.set(0xffffff); 
+                            material.transparent = true;
+                            material.opacity = 0.0;
+                            material.depthWrite = false; // Disable depth write when invisible
+                            material.needsUpdate = true; // Force material update
+                        });
+                    }
+                });
+                scene.add(subpanelsOutlinePipe);                // Force opacity update to ensure it's invisible
+                updateSubpanelsOutlinePipeOpacity(0);
+                console.log('SubpanelsOutlinePipe loaded (starts invisible)');
+                checkModelsLoaded();
+            },
+            undefined,
+            (error) => console.error('Error loading SubpanelsOutlinePipe:', error)
+        );
+        
+        // Check if all required models are loaded (attractorPipe is optional)
         function checkModelsLoaded() {
-            if (baseSurface && panelUnits && wallOutlineExtruded && glazing && 
-                cylinder && circlePipes && baseSurfaceUntrimmedMiddle && 
-                baseSurfaceUntrimmedSides && panelUnitPipe) {
+            // Required models
+            const requiredModels = [
+                baseSurface, panelUnits, wallOutlineExtruded, glazing,
+                cylinderStraight, cylinder, circlePipes, baseSurfaceUntrimmedMiddle,
+                baseSurfaceUntrimmedSides, panelUnitPipe, subpanels, subpanelsColored, 
+                subpanelsOutlinePipe, simpleBuilding
+            ];
+            
+            const allRequiredLoaded = requiredModels.every(model => model !== null);
+            
+            if (allRequiredLoaded) {
                 document.getElementById('loading').style.display = 'none';
                 
                 // Log scene info for debugging
-                console.log('All models loaded. Scene children:', scene.children.length);
+                console.log('All required models loaded. Scene children:', scene.children.length);
+                if (!attractorPipe) console.warn('attractorPipe.glb is missing');
                 
                 // Start GSAP animations
                 startAnimations();
             }
         }
         
+        // Calculate what needs to fade in/out between two steps
+        function calculateStepTransition(prevStep, nextStep) {
+            // Extract models array from step objects (handle both old array format and new object format)
+            const prevModels = Array.isArray(prevStep) ? prevStep : (prevStep?.models || []);
+            const nextModels = Array.isArray(nextStep) ? nextStep : (nextStep?.models || []);
+            
+            const prevSet = new Set(prevModels);
+            const nextSet = new Set(nextModels);
+            
+            const fadeIn = nextModels.filter(item => !prevSet.has(item));
+            const fadeOut = prevModels.filter(item => !nextSet.has(item));
+            
+            return { fadeIn, fadeOut };
+        }
+        
+        // Update text overlay for a specific step
+        function updateStepText(stepIndex) {
+            const textOverlay = document.getElementById('text-overlay');
+            if (!textOverlay) return;
+            
+            const step = animationConfig.steps[stepIndex];
+            if (step && step.text !== undefined) {
+                textOverlay.textContent = step.text;
+            } else {
+                textOverlay.textContent = '';
+            }
+        }
+        
+        // Set visibility for all models based on step configuration
+        function setStepVisibility(stepIndex) {
+            const step = animationConfig.steps[stepIndex];
+            if (!step || !step.models) return;
+            
+            // Get all model names
+            const allModelNames = Object.keys(modelMap);
+            
+            // Set opacity for each model
+            allModelNames.forEach(modelName => {
+                const shouldBeVisible = step.models.includes(modelName);
+                const opacity = shouldBeVisible ? 1 : 0;
+                const modelInfo = modelMap[modelName];
+                if (modelInfo && modelInfo.update) {
+                    modelInfo.update(opacity);
+                }
+            });
+            
+            // Update step text
+            updateStepText(stepIndex);
+        }
+        
         // Start all animations with GSAP
         function startAnimations() {
-            console.log('[Animation] Starting animations with timings:', animationTimings);
+            console.log('[Animation] Starting step-based animations');
+            console.log('[Animation] Config:', animationConfig);
             
             // Create main timeline that loops
             mainTimeline = gsap.timeline({ repeat: -1 });
             
-            // Set initial states explicitly BEFORE timeline starts - all new geometry starts invisible
-            console.log('[Animation] Setting initial states - ensuring all geometry starts invisible');
-            updateBaseSurfaceOpacity(0);
-            updateGlazingOpacity(0);
-            updateCylinderOpacity(0);
-            updateCirclePipesOpacity(0);
-            updateBaseSurfaceUntrimmedMiddleOpacity(0);
-            updateBaseSurfaceUntrimmedSidesOpacity(0);
-            updatePanelUnitPipeOpacity(0);
-            updatePanelUnitsOpacity(0);
-            updateWallOutlineExtrudedOpacity(0);
+            // Set initial state - first step
+            setStepVisibility(0);
             
             // Also set in timeline at time 0 to ensure it happens at the start of each loop
             mainTimeline.set({}, {
                 onStart: function() {
-                    console.log('[Animation] Timeline start (time 0) - resetting all geometry to invisible');
-                    updateBaseSurfaceOpacity(0);
-                    updateGlazingOpacity(0);
-                    updateCylinderOpacity(0);
-                    updateCirclePipesOpacity(0);
-                    updateBaseSurfaceUntrimmedMiddleOpacity(0);
-                    updateBaseSurfaceUntrimmedSidesOpacity(0);
-                    updatePanelUnitPipeOpacity(0);
-                    updatePanelUnitsOpacity(0);
-                    updateWallOutlineExtrudedOpacity(0);
+                    setStepVisibility(0);
                 }
             }, 0);
             
-            // Phase 1: Cylinder and CirclePipes fade in
-            const cylinderFadeIn = { progress: 0 };
-            mainTimeline.to(cylinderFadeIn, {
-                progress: 1,
-                duration: animationTimings.fadeDuration,
-                ease: "power2.out",
-                onUpdate: function() {
-                    updateCylinderOpacity(cylinderFadeIn.progress);
-                }
-            }, animationTimings.cylinderFadeIn);
+            // Build timeline by processing each step transition
+            // Step 0 starts at time 0 and is visible for stepTiming seconds
+            // Transition to step i (i > 0) happens at: i * stepTiming + (i - 1) * fadeTiming
             
-            const circlePipesFadeIn = { progress: 0 };
-            mainTimeline.to(circlePipesFadeIn, {
-                progress: 1,
-                duration: animationTimings.fadeDuration,
-                ease: "power2.out",
-                onUpdate: function() {
-                    updateCirclePipesOpacity(circlePipesFadeIn.progress);
-                }
-            }, animationTimings.circlePipesFadeIn);
+            for (let i = 1; i < animationConfig.steps.length; i++) {
+                const prevStep = animationConfig.steps[i - 1];
+                const nextStep = animationConfig.steps[i];
+                const transition = calculateStepTransition(prevStep, nextStep);
+                
+                // Calculate when this transition starts
+                const transitionStartTime = i * animationConfig.stepTiming + (i - 1) * animationConfig.fadeTiming;
+                
+                // Update text at the start of transition
+                mainTimeline.call(() => {
+                    updateStepText(i);
+                }, [], transitionStartTime);
+                
+                // Fade out items that are leaving
+                transition.fadeOut.forEach(modelName => {
+                    const modelInfo = modelMap[modelName];
+                    if (modelInfo && modelInfo.update) {
+                        const fadeOut = { progress: 1 };
+                        mainTimeline.to(fadeOut, {
+                            progress: 0,
+                            duration: animationConfig.fadeTiming,
+                            ease: "power2.in",
+                            onUpdate: function() {
+                                modelInfo.update(fadeOut.progress);
+                            }
+                        }, transitionStartTime);
+                    }
+                });
+                
+                // Fade in items that are appearing
+                transition.fadeIn.forEach(modelName => {
+                    const modelInfo = modelMap[modelName];
+                    if (modelInfo && modelInfo.update) {
+                        const fadeIn = { progress: 0 };
+                        mainTimeline.to(fadeIn, {
+                            progress: 1,
+                            duration: animationConfig.fadeTiming,
+                            ease: "power2.out",
+                            onUpdate: function() {
+                                modelInfo.update(fadeIn.progress);
+                            }
+                        }, transitionStartTime);
+                    }
+                });
+                
+                // Items that stay visible don't need animation (they're already at opacity 1)
+                // Items that stay invisible don't need animation (they're already at opacity 0)
+            }
             
-            // Phase 2: Cylinder fade out, BaseSurfaceUntrimmed-Middle fade in
-            const cylinderFadeOut = { progress: 1 };
-            mainTimeline.to(cylinderFadeOut, {
-                progress: 0,
-                duration: animationTimings.fadeDuration,
-                ease: "power2.in",
-                onUpdate: function() {
-                    updateCylinderOpacity(cylinderFadeOut.progress);
-                }
-            }, animationTimings.cylinderFadeOut);
+            console.log('[Animation] All step transitions added to timeline');
             
-            const baseSurfaceUntrimmedMiddleFadeIn = { progress: 0 };
-            mainTimeline.to(baseSurfaceUntrimmedMiddleFadeIn, {
-                progress: 1,
-                duration: animationTimings.fadeDuration,
-                ease: "power2.out",
-                onUpdate: function() {
-                    updateBaseSurfaceUntrimmedMiddleOpacity(baseSurfaceUntrimmedMiddleFadeIn.progress);
+            // Initialize manual step control
+            setupManualStepControl();
+        }
+        
+        // Calculate which step we're in based on time
+        function getStepFromTime(time) {
+            let accumulatedTime = 0;
+            for (let i = 0; i < animationConfig.steps.length; i++) {
+                if (i > 0) {
+                    accumulatedTime += animationConfig.stepTiming;
                 }
-            }, animationTimings.baseSurfaceUntrimmedMiddleFadeIn);
-            
-            // Phase 3: BaseSurfaceUntrimmed-Sides fade in
-            const baseSurfaceUntrimmedSidesFadeIn = { progress: 0 };
-            mainTimeline.to(baseSurfaceUntrimmedSidesFadeIn, {
-                progress: 1,
-                duration: animationTimings.fadeDuration,
-                ease: "power2.out",
-                onUpdate: function() {
-                    updateBaseSurfaceUntrimmedSidesOpacity(baseSurfaceUntrimmedSidesFadeIn.progress);
+                // Check if we're in the fade transition period
+                if (time >= accumulatedTime && time < accumulatedTime + animationConfig.fadeTiming) {
+                    // During fade transition - return previous step index
+                    return i > 0 ? i - 1 : 0;
                 }
-            }, animationTimings.baseSurfaceUntrimmedSidesFadeIn);
-            
-            // Phase 4: CirclePipes fade out, PanelUnitPipe fade in
-            const circlePipesFadeOut = { progress: 1 };
-            mainTimeline.to(circlePipesFadeOut, {
-                progress: 0,
-                duration: animationTimings.fadeDuration,
-                ease: "power2.in",
-                onUpdate: function() {
-                    updateCirclePipesOpacity(circlePipesFadeOut.progress);
+                // Check if we're in the stable period of this step
+                if (time >= accumulatedTime + animationConfig.fadeTiming && 
+                    (i === animationConfig.steps.length - 1 || time < accumulatedTime + animationConfig.stepTiming)) {
+                    return i;
                 }
-            }, animationTimings.circlePipesFadeOut);
+                accumulatedTime += animationConfig.fadeTiming;
+            }
+            // If past all steps, return last step
+            return animationConfig.steps.length - 1;
+        }
+        
+        // Update all opacities to match a specific step
+        function updateOpacitiesToStep(stepIndex) {
+            setStepVisibility(stepIndex);
+        }
+        
+        // Manual step control - allows stepping through animation
+        function setupManualStepControl() {
+            let currentStepIndex = 0;
+            let isManualMode = false;
+            let wasPausedBeforeManual = false;
             
-            const panelUnitPipeFadeIn = { progress: 0 };
-            mainTimeline.to(panelUnitPipeFadeIn, {
-                progress: 1,
-                duration: animationTimings.fadeDuration,
-                ease: "power2.out",
-                onUpdate: function() {
-                    updatePanelUnitPipeOpacity(panelUnitPipeFadeIn.progress);
+            // Mouse interaction tracking for click vs drag detection
+            let mouseDownTime = 0;
+            let mouseDownX = 0;
+            let mouseDownY = 0;
+            let hasMoved = false;
+            const DRAG_THRESHOLD = 5; // pixels - if mouse moves more than this, it's a drag
+            const LONG_CLICK_THRESHOLD = 200; // milliseconds - if held longer, it's a long click
+            
+            const canvas = renderer.domElement;
+            
+            // Calculate time for a step (when it's fully visible, after fade completes)
+            function getTimeForStep(stepIndex) {
+                if (stepIndex === 0) return 0;
+                // Step i is fully visible after: i * stepTiming + (i - 1) * fadeTiming + fadeTiming
+                // Which simplifies to: i * stepTiming + i * fadeTiming = i * (stepTiming + fadeTiming)
+                return stepIndex * animationConfig.stepTiming + stepIndex * animationConfig.fadeTiming;
+            }
+            
+            // Go to a specific step
+            function goToStep(stepIndex) {
+                if (stepIndex < 0 || stepIndex >= animationConfig.steps.length) {
+                    return; // Out of bounds
                 }
-            }, animationTimings.panelUnitPipeFadeIn);
-            
-            // Phase 5: BaseSurfaceUntrimmed-Middle and Sides fade out, PanelUnitPipe fade out, WallOutlineExtruded and PanelUnits fade in
-            const baseSurfaceUntrimmedMiddleFadeOut = { progress: 1 };
-            mainTimeline.to(baseSurfaceUntrimmedMiddleFadeOut, {
-                progress: 0,
-                duration: animationTimings.fadeDuration,
-                ease: "power2.in",
-                onUpdate: function() {
-                    updateBaseSurfaceUntrimmedMiddleOpacity(baseSurfaceUntrimmedMiddleFadeOut.progress);
+                
+                currentStepIndex = stepIndex;
+                const targetTime = getTimeForStep(stepIndex);
+                
+                // Pause timeline and seek to the step time
+                if (mainTimeline) {
+                    wasPausedBeforeManual = mainTimeline.paused();
+                    mainTimeline.pause();
+                    mainTimeline.time(targetTime);
+                    isManualMode = true;
                 }
-            }, animationTimings.baseSurfaceUntrimmedMiddleFadeOut);
+                
+                // Manually update all opacities to match the step
+                updateOpacitiesToStep(stepIndex);
+                
+                const step = animationConfig.steps[stepIndex];
+                const stepItems = step?.models ? step.models.join(', ') : '';
+                console.log(`[Manual Step] Moved to step ${stepIndex + 1}: [${stepItems}]`);
+            }
             
-            const baseSurfaceUntrimmedSidesFadeOut = { progress: 1 };
-            mainTimeline.to(baseSurfaceUntrimmedSidesFadeOut, {
-                progress: 0,
-                duration: animationTimings.fadeDuration,
-                ease: "power2.in",
-                onUpdate: function() {
-                    updateBaseSurfaceUntrimmedSidesOpacity(baseSurfaceUntrimmedSidesFadeOut.progress);
+            // Go to next step
+            function nextStep() {
+                if (currentStepIndex < animationConfig.steps.length - 1) {
+                    goToStep(currentStepIndex + 1);
                 }
-            }, animationTimings.baseSurfaceUntrimmedSidesFadeOut);
+            }
             
-            const panelUnitPipeFadeOut = { progress: 1 };
-            mainTimeline.to(panelUnitPipeFadeOut, {
-                progress: 0,
-                duration: animationTimings.fadeDuration,
-                ease: "power2.in",
-                onUpdate: function() {
-                    updatePanelUnitPipeOpacity(panelUnitPipeFadeOut.progress);
+            // Go to previous step
+            function previousStep() {
+                if (currentStepIndex > 0) {
+                    goToStep(currentStepIndex - 1);
                 }
-            }, animationTimings.panelUnitPipeFadeOut);
+            }
             
-            // Color Panels fade in
-            const colorPanelsFadeIn = { progress: 0 };
-            mainTimeline.to(colorPanelsFadeIn, {
-                progress: 1,
-                duration: animationTimings.fadeDuration,
-                ease: "power2.out",
-                onUpdate: function() {
-                    updatePanelUnitsOpacity(colorPanelsFadeIn.progress);
+            // Resume automatic animation
+            function resumeAutomatic() {
+                if (mainTimeline && isManualMode) {
+                    // Resume from current position if it was playing, or restart if it was paused
+                    if (!wasPausedBeforeManual) {
+                        mainTimeline.resume();
+                    }
+                    isManualMode = false;
+                    console.log('[Manual Step] Resumed automatic animation');
                 }
-            }, animationTimings.colorPanelsFadeIn);
+            }
             
-            // Color Panels fade out
-            const colorPanelsFadeOut = { progress: 1 };
-            mainTimeline.to(colorPanelsFadeOut, {
-                progress: 0,
-                duration: animationTimings.fadeDuration,
-                ease: "power2.in",
-                onUpdate: function() {
-                    updatePanelUnitsOpacity(colorPanelsFadeOut.progress);
+            // Mouse down - track position and time
+            canvas.addEventListener('mousedown', (e) => {
+                // Only handle left mouse button for step control
+                if (e.button === 0) {
+                    mouseDownTime = Date.now();
+                    mouseDownX = e.clientX;
+                    mouseDownY = e.clientY;
+                    hasMoved = false;
                 }
-            }, animationTimings.colorPanelsFadeOut);
+            });
             
-            // Outline fade in
-            const outlineFadeIn = { progress: 0 };
-            mainTimeline.to(outlineFadeIn, {
-                progress: 1,
-                duration: animationTimings.fadeDuration,
-                ease: "power2.out",
-                onUpdate: function() {
-                    updateWallOutlineExtrudedOpacity(outlineFadeIn.progress);
+            // Mouse move - detect if user is dragging
+            canvas.addEventListener('mousemove', (e) => {
+                if (mouseDownTime > 0) {
+                    const dx = Math.abs(e.clientX - mouseDownX);
+                    const dy = Math.abs(e.clientY - mouseDownY);
+                    if (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD) {
+                        hasMoved = true;
+                    }
                 }
-            }, animationTimings.outlineFadeIn);
+            });
             
-            // Outline fade out
-            const outlineFadeOut = { progress: 1 };
-            mainTimeline.to(outlineFadeOut, {
-                progress: 0,
-                duration: animationTimings.fadeDuration,
-                ease: "power2.in",
-                onUpdate: function() {
-                    updateWallOutlineExtrudedOpacity(outlineFadeOut.progress);
+            // Mouse up - determine if it was a click or drag
+            canvas.addEventListener('mouseup', (e) => {
+                if (e.button === 0 && mouseDownTime > 0) {
+                    const clickDuration = Date.now() - mouseDownTime;
+                    const isLongClick = clickDuration > LONG_CLICK_THRESHOLD;
+                    
+                    // If it's a short click without movement, advance to next step
+                    if (!hasMoved && !isLongClick) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        nextStep();
+                    }
+                    
+                    // Reset tracking
+                    mouseDownTime = 0;
+                    hasMoved = false;
                 }
-            }, animationTimings.outlineFadeOut);
+            });
             
-            // BaseSurface fade in - EXACT copy of colorPanelsFadeIn pattern
-            const baseSurfaceFadeIn = { progress: 0 };
-            mainTimeline.to(baseSurfaceFadeIn, {
-                progress: 1,
-                duration: animationTimings.fadeDuration,
-                ease: "power2.out",
-                onUpdate: function() {
-                    updateBaseSurfaceOpacity(baseSurfaceFadeIn.progress);
+            // Right click - go to previous step
+            canvas.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                previousStep();
+                return false;
+            });
+            
+            // Arrow keys for navigation, Spacebar to resume automatic mode
+            window.addEventListener('keydown', (e) => {
+                // Only handle if not typing in an input field
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+                    return;
                 }
-            }, animationTimings.baseSurfaceFadeIn);
-            
-            // BaseSurface fade out - EXACT copy of colorPanelsFadeOut pattern
-            const baseSurfaceFadeOut = { progress: 1 };
-            mainTimeline.to(baseSurfaceFadeOut, {
-                progress: 0,
-                duration: animationTimings.fadeDuration,
-                ease: "power2.in",
-                onUpdate: function() {
-                    updateBaseSurfaceOpacity(baseSurfaceFadeOut.progress);
+                
+                switch (e.key) {
+                    case 'ArrowRight':
+                        e.preventDefault();
+                        nextStep();
+                        break;
+                    case 'ArrowLeft':
+                        e.preventDefault();
+                        previousStep();
+                        break;
+                    case ' ':
+                        e.preventDefault();
+                        if (isManualMode) {
+                            resumeAutomatic();
+                        }
+                        break;
                 }
-            }, animationTimings.baseSurfaceFadeOut);
+            });
             
-            // Glazing fade in - EXACT copy of outlineFadeIn pattern
-            const glazingFadeIn = { progress: 0 };
-            mainTimeline.to(glazingFadeIn, {
-                progress: 1,
-                duration: animationTimings.fadeDuration,
-                ease: "power2.out",
-                onUpdate: function() {
-                    updateGlazingOpacity(glazingFadeIn.progress);
+            // Double-click to resume automatic mode
+            let lastClickTime = 0;
+            const DOUBLE_CLICK_THRESHOLD = 300; // milliseconds
+            canvas.addEventListener('click', (e) => {
+                if (e.button === 0 && !hasMoved) {
+                    const currentTime = Date.now();
+                    if (currentTime - lastClickTime < DOUBLE_CLICK_THRESHOLD && isManualMode) {
+                        e.preventDefault();
+                        resumeAutomatic();
+                    }
+                    lastClickTime = currentTime;
                 }
-            }, animationTimings.glazingFadeIn);
+            });
             
-            // Glazing fade out - EXACT copy of outlineFadeOut pattern
-            const glazingFadeOut = { progress: 1 };
-            mainTimeline.to(glazingFadeOut, {
-                progress: 0,
-                duration: animationTimings.fadeDuration,
-                ease: "power2.in",
-                onUpdate: function() {
-                    updateGlazingOpacity(glazingFadeOut.progress);
-                }
-            }, animationTimings.glazingFadeOut);
+            // If user clicks and drags (for orbit controls), don't interfere
+            // OrbitControls will handle the drag, and our mousemove detection will prevent stepping
             
-            console.log('[Animation] All animations added to timeline');
+            console.log('[Manual Step] Step control initialized. Click to advance, right-click to go back, arrow keys to navigate.');
         }
         
         // Animation loop (simplified - GSAP handles animations)
