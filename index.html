@@ -159,6 +159,12 @@
         let attractorPipeOriginalOpacity = {};
         let subpanelsOutlinePipe = null;
         let subpanelsOutlinePipeOriginalOpacity = {};
+        let panelInfillUntrimmed = null;
+        let panelInfillUntrimmedOriginalOpacity = {};
+        let panelInfillTrimmed = null;
+        let panelInfillTrimmedOriginalOpacity = {};
+        let panelInfill = null;
+        let panelInfillOriginalOpacity = {};
         
         // Simple step-based animation configuration
         const animationConfig = {
@@ -184,10 +190,10 @@
                 { models: ['subpanelsColored', 'simpleBuilding', 'panelUnitPipe', 'subpanelsOutlinePipe'], text: 'Distance is calulated from the attractors to each panel' },
                 { models: ['subpanelsColored', 'simpleBuilding', 'panelUnitPipe', 'subpanelsOutlinePipe', 'glazing'], text: 'The distance sets the size of the glazing in the panel' },
                 { models: ['subpanels', 'simpleBuilding', 'panelUnitPipe', 'subpanelsOutlinePipe', 'glazing'], text: 'The final glazing sizes' },
+                { models: ['subpanels', 'simpleBuilding', 'panelUnitPipe', 'subpanelsOutlinePipe', 'glazing', 'Panel-Infill-Untrimmed'], text: 'Infill panels are installed between the glazing, spanning across the units' },
+                { models: [ 'simpleBuilding', 'glazing', 'Panel-Infill-Trimmed'], text: 'Panels are Trimmed to follow the facade' },
+                { models: [ 'simpleBuilding', 'glazing', 'Panel-Infill'], text: '4 Colors of Metal Panels are installed between the glazing to complete the facade' }
 
-
-
-                { models: [], text: '' }
             ]
         };
         
@@ -207,7 +213,10 @@
             'glazing': { model: () => glazing, update: updateGlazingOpacity },
             'baseSurface': { model: () => baseSurface, update: updateBaseSurfaceOpacity },
             'simpleBuilding': { model: () => simpleBuilding, update: updateSimpleBuildingOpacity },
-            'attractorPipe': { model: () => attractorPipe, update: updateAttractorPipeOpacity }
+            'attractorPipe': { model: () => attractorPipe, update: updateAttractorPipeOpacity },
+            'Panel-Infill-Untrimmed': { model: () => panelInfillUntrimmed, update: updatePanelInfillUntrimmedOpacity },
+            'Panel-Infill-Trimmed': { model: () => panelInfillTrimmed, update: updatePanelInfillTrimmedOpacity },
+            'Panel-Infill': { model: () => panelInfill, update: updatePanelInfillOpacity }
         };
         
         // GSAP timeline for all animations
@@ -565,6 +574,69 @@
                         materials.forEach((material, index) => {
                             const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
                             const originalOpacity = subpanelsOutlinePipeOriginalOpacity[key] || 1.0;
+                            material.opacity = originalOpacity * opacity;
+                            material.transparent = opacity < 1.0;
+                            material.depthWrite = isFullyOpaque;
+                            material.needsUpdate = true;
+                        });
+                    }
+                }
+            });
+        }
+        
+        function updatePanelInfillUntrimmedOpacity(opacity) {
+            if (!panelInfillUntrimmed) return;
+            const isFullyOpaque = opacity >= 1.0;
+            panelInfillUntrimmed.traverse((child) => {
+                if (child.isMesh) {
+                    child.castShadow = opacity > 0;
+                    if (child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            const originalOpacity = panelInfillUntrimmedOriginalOpacity[key] || 1.0;
+                            material.opacity = originalOpacity * opacity;
+                            material.transparent = opacity < 1.0;
+                            material.depthWrite = isFullyOpaque;
+                            material.needsUpdate = true;
+                        });
+                    }
+                }
+            });
+        }
+        
+        function updatePanelInfillTrimmedOpacity(opacity) {
+            if (!panelInfillTrimmed) return;
+            const isFullyOpaque = opacity >= 1.0;
+            panelInfillTrimmed.traverse((child) => {
+                if (child.isMesh) {
+                    child.castShadow = opacity > 0;
+                    if (child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            const originalOpacity = panelInfillTrimmedOriginalOpacity[key] || 1.0;
+                            material.opacity = originalOpacity * opacity;
+                            material.transparent = opacity < 1.0;
+                            material.depthWrite = isFullyOpaque;
+                            material.needsUpdate = true;
+                        });
+                    }
+                }
+            });
+        }
+        
+        function updatePanelInfillOpacity(opacity) {
+            if (!panelInfill) return;
+            const isFullyOpaque = opacity >= 1.0;
+            panelInfill.traverse((child) => {
+                if (child.isMesh) {
+                    child.castShadow = opacity > 0;
+                    if (child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            const originalOpacity = panelInfillOriginalOpacity[key] || 1.0;
                             material.opacity = originalOpacity * opacity;
                             material.transparent = opacity < 1.0;
                             material.depthWrite = isFullyOpaque;
@@ -1203,6 +1275,88 @@
             (error) => console.error('Error loading SubpanelsOutlinePipe:', error)
         );
         
+        // Load PanelInfillUntrimmed
+        loader.load(
+            './Panel-Infill-Untrimmed.glb',
+            (gltf) => {
+                panelInfillUntrimmed = gltf.scene;
+                panelInfillUntrimmed.position.set(0, 0, 0);
+                configureModelForRendering(panelInfillUntrimmed);
+                panelInfillUntrimmed.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            panelInfillUntrimmedOriginalOpacity[key] = material.opacity !== undefined ? material.opacity : 1.0;
+                            material.transparent = true;
+                            material.opacity = 0.0;
+                        });
+                    }
+                });
+                updatePanelInfillUntrimmedOpacity(0);
+                scene.add(panelInfillUntrimmed);
+                console.log('PanelInfillUntrimmed loaded');
+                checkModelsLoaded();
+            },
+            undefined,
+            (error) => console.error('Error loading PanelInfillUntrimmed:', error)
+        );
+        
+        // Load PanelInfillTrimmed
+        loader.load(
+            './Panel-Infill-Trimmed.glb',
+            (gltf) => {
+                panelInfillTrimmed = gltf.scene;
+                panelInfillTrimmed.position.set(0, 0, 0);
+                configureModelForRendering(panelInfillTrimmed);
+                panelInfillTrimmed.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            panelInfillTrimmedOriginalOpacity[key] = material.opacity !== undefined ? material.opacity : 1.0;
+                            material.transparent = true;
+                            material.opacity = 0.0;
+                        });
+                    }
+                });
+                updatePanelInfillTrimmedOpacity(0);
+                scene.add(panelInfillTrimmed);
+                console.log('PanelInfillTrimmed loaded');
+                checkModelsLoaded();
+            },
+            undefined,
+            (error) => console.error('Error loading PanelInfillTrimmed:', error)
+        );
+        
+        // Load PanelInfill
+        loader.load(
+            './Panels-Infill.glb',
+            (gltf) => {
+                panelInfill = gltf.scene;
+                panelInfill.position.set(0, 0, 0);
+                // Configure model for rendering - preserve colors from GLTF file
+                configureModelForRendering(panelInfill, true); // true = preserve colors
+                panelInfill.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((material, index) => {
+                            const key = Array.isArray(child.material) ? `${child.uuid}-${index}` : child.uuid;
+                            panelInfillOriginalOpacity[key] = material.opacity !== undefined ? material.opacity : 1.0;
+                            material.transparent = true;
+                            material.opacity = 0.0;
+                        });
+                    }
+                });
+                updatePanelInfillOpacity(0);
+                scene.add(panelInfill);
+                console.log('PanelInfill loaded');
+                checkModelsLoaded();
+            },
+            undefined,
+            (error) => console.error('Error loading PanelInfill:', error)
+        );
+        
         // Check if all required models are loaded (attractorPipe is optional)
         function checkModelsLoaded() {
             // Required models
@@ -1210,7 +1364,8 @@
                 baseSurface, panelUnits, wallOutlineExtruded, glazing,
                 cylinderStraight, cylinder, circlePipes, baseSurfaceUntrimmedMiddle,
                 baseSurfaceUntrimmedSides, panelUnitPipe, subpanels, subpanelsColored, 
-                subpanelsOutlinePipe, simpleBuilding
+                subpanelsOutlinePipe, simpleBuilding, panelInfillUntrimmed, 
+                panelInfillTrimmed, panelInfill
             ];
             
             const allRequiredLoaded = requiredModels.every(model => model !== null);
