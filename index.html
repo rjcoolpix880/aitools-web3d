@@ -43,11 +43,68 @@
             color: white;
             font-size: 18px;
         }
+        
+        #loading-popup {
+            position: fixed;
+            inset: 0;
+            background: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        #loading-popup.hidden {
+            display: none;
+        }
+        #loading-popup .popup-box {
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 24px;
+            min-width: 320px;
+            max-width: 90vw;
+            max-height: 80vh;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+        }
+        #loading-popup .popup-title {
+            color: #333;
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 16px;
+        }
+        #loading-popup .popup-list {
+            list-style: none;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        #loading-popup .popup-list li {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 6px 0;
+            color: #555;
+            font-size: 14px;
+            font-family: monospace;
+        }
+        #loading-popup .popup-list li .status {
+            flex-shrink: 0;
+            width: 18px;
+            text-align: center;
+        }
+        #loading-popup .popup-list li.pending .status { color: #999; }
+        #loading-popup .popup-list li.loading .status { color: #4a9eff; }
+        #loading-popup .popup-list li.loaded .status { color: #2ecc71; }
+        #loading-popup .popup-list li.error .status { color: #e74c3c; }
     </style>
 </head>
 <body>
     <div id="canvas-container"></div>
-    <div id="loading">Loading 3D models...</div>
+    <div id="loading-popup">
+        <div class="popup-box">
+            <div class="popup-title">Loading 3D models</div>
+            <ul class="popup-list" id="loading-file-list"></ul>
+        </div>
+    </div>
     <div id="text-overlay"></div>
 
     <script type="importmap">
@@ -105,7 +162,7 @@
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
         controls.dampingFactor = 0.05;
-        controls.screenSpacePanning = false;
+        controls.screenSpacePanning = true; // right-drag: up/down and left/right in screen space (not in/out)
         controls.minDistance = 10;
         controls.maxDistance = 500;
         controls.target.set(-30, 20, 50); // Match the camera lookAt target
@@ -118,6 +175,38 @@
         const dracoLoader = new DRACOLoader();
         dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/');
         loader.setDRACOLoader(dracoLoader);
+        
+        // Loading popup: list of files we load (paths must match loader.load() calls)
+        const LOAD_FILES = [
+            './BaseSurface.gltf', './PanelUnitsColored.glb', './WallOutlineExtruded.gltf', './glazing.glb',
+            './CylinderStraight.glb', './Cylinder.glb', './CirlesPipe.glb', './BaseSurfaceUntrimmed-middle.glb',
+            './BaseSurfaceUntrimmed-sides.glb', './PanelUnitsPipe.glb', './subpanels.glb', './subpanelsColored.glb',
+            './SimpleBuilding.glb', './attractorsPipe.glb', './subpanelsOutline-Pipe.glb',
+            './Panel-Infill-Untrimmed.glb', './Panel-Infill-Trimmed.glb', './Panels-Infill.glb'
+        ];
+        const loadingFileStatus = {};
+        function initLoadingPopup() {
+            const listEl = document.getElementById('loading-file-list');
+            if (!listEl) return;
+            listEl.innerHTML = '';
+            LOAD_FILES.forEach(path => {
+                loadingFileStatus[path] = 'pending';
+                const li = document.createElement('li');
+                li.className = 'pending';
+                li.dataset.path = path;
+                li.innerHTML = '<span class="status">○</span><span class="name">' + path.replace('./', '') + '</span>';
+                listEl.appendChild(li);
+            });
+        }
+        function updateLoadingFile(path, status) {
+            loadingFileStatus[path] = status;
+            const li = document.querySelector('#loading-file-list li[data-path="' + path + '"]');
+            if (!li) return;
+            li.className = status;
+            const statusChar = { pending: '○', loading: '…', loaded: '✓', error: '✗' }[status] || '○';
+            li.querySelector('.status').textContent = statusChar;
+        }
+        initLoadingPopup();
         
         // Render order configuration - higher values are drawn last (on top)
         const renderOrder = {
@@ -648,9 +737,12 @@
         }
         
         // Load BaseSurface (static, fixed at origin)
+        const pathBaseSurface = './BaseSurface.gltf';
+        updateLoadingFile(pathBaseSurface, 'loading');
         loader.load(
-            './BaseSurface.gltf',
+            pathBaseSurface,
             (gltf) => {
+                updateLoadingFile(pathBaseSurface, 'loaded');
                 baseSurface = gltf.scene;
                 baseSurface.position.set(0, 0, 0); // Fixed at origin
                 
@@ -691,8 +783,8 @@
                     child.renderOrder = renderOrder.baseSurface;
                 });
                 
-                scene.add(baseSurface);
-                console.log('BaseSurface loaded and added to scene');
+                // Model added to scene only when visible (setStepVisibility)
+                console.log('BaseSurface loaded');
                 checkModelsLoaded();
             },
             (progress) => {
@@ -702,14 +794,18 @@
                 }
             },
             (error) => {
+                updateLoadingFile(pathBaseSurface, 'error');
                 console.error('Error loading BaseSurface:', error);
             }
         );
         
         // Load PanelUnitsColored (animated)
+        const pathPanelUnits = './PanelUnitsColored.glb';
+        updateLoadingFile(pathPanelUnits, 'loading');
         loader.load(
-            './PanelUnitsColored.glb',
+            pathPanelUnits,
             (gltf) => {
+                updateLoadingFile(pathPanelUnits, 'loaded');
                 panelUnits = gltf.scene;
                 panelUnits.position.set(0, 0, 0); // Fixed at origin, no movement
                 
@@ -735,8 +831,8 @@
                     child.renderOrder = renderOrder.panelUnits;
                 });
                 
-                scene.add(panelUnits);
-                console.log('PanelUnitsColored loaded and added to scene');
+                // Model added to scene only when visible (setStepVisibility)
+                console.log('PanelUnitsColored loaded');
                 checkModelsLoaded();
             },
             (progress) => {
@@ -746,14 +842,18 @@
                 }
             },
             (error) => {
+                updateLoadingFile(pathPanelUnits, 'error');
                 console.error('Error loading PanelUnitsColored:', error);
             }
         );
         
         // Load WallOutlineExtruded (fades in/out opposite of BaseSurface)
+        const pathWallOutline = './WallOutlineExtruded.gltf';
+        updateLoadingFile(pathWallOutline, 'loading');
         loader.load(
-            './WallOutlineExtruded.gltf',
+            pathWallOutline,
             (gltf) => {
+                updateLoadingFile(pathWallOutline, 'loaded');
                 wallOutlineExtruded = gltf.scene;
                 wallOutlineExtruded.position.set(0, 0, 0); // Same position as BaseSurface
                 
@@ -779,8 +879,8 @@
                     child.renderOrder = renderOrder.wallOutlineExtruded;
                 });
                 
-                scene.add(wallOutlineExtruded);
-                console.log('WallOutlineExtruded loaded and added to scene');
+                // Model added to scene only when visible (setStepVisibility)
+                console.log('WallOutlineExtruded loaded');
                 checkModelsLoaded();
             },
             (progress) => {
@@ -790,14 +890,18 @@
                 }
             },
             (error) => {
+                updateLoadingFile(pathWallOutline, 'error');
                 console.error('Error loading WallOutlineExtruded:', error);
             }
         );
         
         // Load Glazing (animates 2 seconds after PanelUnits, same path)
+        const pathGlazing = './glazing.glb';
+        updateLoadingFile(pathGlazing, 'loading');
         loader.load(
-            './glazing.glb',
+            pathGlazing,
             (gltf) => {
+                updateLoadingFile(pathGlazing, 'loaded');
                 glazing = gltf.scene;
                 glazing.position.set(0, 0, 0); // Fixed at origin, no movement
                 
@@ -845,8 +949,8 @@
                     child.renderOrder = renderOrder.glazing;
                 });
                 
-                scene.add(glazing);
-                console.log('Glazing loaded and added to scene');
+                // Model added to scene only when visible (setStepVisibility)
+                console.log('Glazing loaded');
                 checkModelsLoaded();
             },
             (progress) => {
@@ -856,14 +960,18 @@
                 }
             },
             (error) => {
+                updateLoadingFile(pathGlazing, 'error');
                 console.error('Error loading Glazing:', error);
             }
         );
         
         // Load CylinderStraight (first, before cylinder)
+        const pathCylinderStraight = './CylinderStraight.glb';
+        updateLoadingFile(pathCylinderStraight, 'loading');
         loader.load(
-            './CylinderStraight.glb',
+            pathCylinderStraight,
             (gltf) => {
+                updateLoadingFile(pathCylinderStraight, 'loaded');
                 cylinderStraight = gltf.scene;
                 cylinderStraight.position.set(0, 0, 0);
                 
@@ -911,18 +1019,21 @@
                     }
                 });
                 updateCylinderStraightOpacity(0);
-                scene.add(cylinderStraight);
+                // Model added to scene only when visible (setStepVisibility)
                 console.log('CylinderStraight loaded');
                 checkModelsLoaded();
             },
             undefined,
-            (error) => console.error('Error loading CylinderStraight:', error)
+            (error) => { updateLoadingFile(pathCylinderStraight, 'error'); console.error('Error loading CylinderStraight:', error); }
         );
         
         // Load Cylinder
+        const pathCylinder = './Cylinder.glb';
+        updateLoadingFile(pathCylinder, 'loading');
         loader.load(
-            './Cylinder.glb',
+            pathCylinder,
             (gltf) => {
+                updateLoadingFile(pathCylinder, 'loaded');
                 cylinder = gltf.scene;
                 cylinder.position.set(0, 0, 0);
                 
@@ -970,18 +1081,21 @@
                     }
                 });
                 updateCylinderOpacity(0);
-                scene.add(cylinder);
+                // Model added to scene only when visible (setStepVisibility)
                 console.log('Cylinder loaded');
                 checkModelsLoaded();
             },
             undefined,
-            (error) => console.error('Error loading Cylinder:', error)
+            (error) => { updateLoadingFile(pathCylinder, 'error'); console.error('Error loading Cylinder:', error); }
         );
         
         // Load CirclePipes
+        const pathCirclePipes = './CirlesPipe.glb';
+        updateLoadingFile(pathCirclePipes, 'loading');
         loader.load(
-            './CirlesPipe.glb',
+            pathCirclePipes,
             (gltf) => {
+                updateLoadingFile(pathCirclePipes, 'loaded');
                 circlePipes = gltf.scene;
                 circlePipes.position.set(0, 0, 0);
                 configureModelForRendering(circlePipes);
@@ -998,18 +1112,21 @@
                     }
                 });
                 updateCirclePipesOpacity(0);
-                scene.add(circlePipes);
+                // Model added to scene only when visible (setStepVisibility)
                 console.log('CirclePipes loaded');
                 checkModelsLoaded();
             },
             undefined,
-            (error) => console.error('Error loading CirclePipes:', error)
+            (error) => { updateLoadingFile(pathCirclePipes, 'error'); console.error('Error loading CirclePipes:', error); }
         );
         
         // Load BaseSurfaceUntrimmed-Middle
+        const pathBaseMiddle = './BaseSurfaceUntrimmed-middle.glb';
+        updateLoadingFile(pathBaseMiddle, 'loading');
         loader.load(
-            './BaseSurfaceUntrimmed-middle.glb',
+            pathBaseMiddle,
             (gltf) => {
+                updateLoadingFile(pathBaseMiddle, 'loaded');
                 baseSurfaceUntrimmedMiddle = gltf.scene;
                 baseSurfaceUntrimmedMiddle.position.set(0, 0, 0);
                 
@@ -1040,18 +1157,21 @@
                     }
                 });
                 updateBaseSurfaceUntrimmedMiddleOpacity(0);
-                scene.add(baseSurfaceUntrimmedMiddle);
+                // Model added to scene only when visible (setStepVisibility)
                 console.log('BaseSurfaceUntrimmed-Middle loaded');
                 checkModelsLoaded();
             },
             undefined,
-            (error) => console.error('Error loading BaseSurfaceUntrimmed-Middle:', error)
+            (error) => { updateLoadingFile(pathBaseMiddle, 'error'); console.error('Error loading BaseSurfaceUntrimmed-Middle:', error); }
         );
         
         // Load BaseSurfaceUntrimmed-Sides
+        const pathBaseSides = './BaseSurfaceUntrimmed-sides.glb';
+        updateLoadingFile(pathBaseSides, 'loading');
         loader.load(
-            './BaseSurfaceUntrimmed-sides.glb',
+            pathBaseSides,
             (gltf) => {
+                updateLoadingFile(pathBaseSides, 'loaded');
                 baseSurfaceUntrimmedSides = gltf.scene;
                 baseSurfaceUntrimmedSides.position.set(0, 0, 0);
                 
@@ -1082,18 +1202,21 @@
                     }
                 });
                 updateBaseSurfaceUntrimmedSidesOpacity(0);
-                scene.add(baseSurfaceUntrimmedSides);
+                // Model added to scene only when visible (setStepVisibility)
                 console.log('BaseSurfaceUntrimmed-Sides loaded');
                 checkModelsLoaded();
             },
             undefined,
-            (error) => console.error('Error loading BaseSurfaceUntrimmed-Sides:', error)
+            (error) => { updateLoadingFile(pathBaseSides, 'error'); console.error('Error loading BaseSurfaceUntrimmed-Sides:', error); }
         );
         
         // Load PanelUnitPipe
+        const pathPanelPipe = './PanelUnitsPipe.glb';
+        updateLoadingFile(pathPanelPipe, 'loading');
         loader.load(
-            './PanelUnitsPipe.glb',
+            pathPanelPipe,
             (gltf) => {
+                updateLoadingFile(pathPanelPipe, 'loaded');
                 panelUnitPipe = gltf.scene;
                 panelUnitPipe.position.set(0, 0, 0);
                 configureModelForRendering(panelUnitPipe);
@@ -1110,18 +1233,21 @@
                     }
                 });
                 updatePanelUnitPipeOpacity(0);
-                scene.add(panelUnitPipe);
+                // Model added to scene only when visible (setStepVisibility)
                 console.log('PanelUnitPipe loaded');
                 checkModelsLoaded();
             },
             undefined,
-            (error) => console.error('Error loading PanelUnitPipe:', error)
+            (error) => { updateLoadingFile(pathPanelPipe, 'error'); console.error('Error loading PanelUnitPipe:', error); }
         );
         
         // Load Subpanels
+        const pathSubpanels = './subpanels.glb';
+        updateLoadingFile(pathSubpanels, 'loading');
         loader.load(
-            './subpanels.glb',
+            pathSubpanels,
             (gltf) => {
+                updateLoadingFile(pathSubpanels, 'loaded');
                 subpanels = gltf.scene;
                 subpanels.position.set(0, 0, 0);
                 configureModelForRendering(subpanels);
@@ -1137,18 +1263,21 @@
                     }
                 });
                 updateSubpanelsOpacity(0);
-                scene.add(subpanels);
+                // Model added to scene only when visible (setStepVisibility)
                 console.log('Subpanels loaded');
                 checkModelsLoaded();
             },
             undefined,
-            (error) => console.error('Error loading Subpanels:', error)
+            (error) => { updateLoadingFile(pathSubpanels, 'error'); console.error('Error loading Subpanels:', error); }
         );
         
         // Load SubpanelsColored
+        const pathSubpanelsColored = './subpanelsColored.glb';
+        updateLoadingFile(pathSubpanelsColored, 'loading');
         loader.load(
-            './subpanelsColored.glb',
+            pathSubpanelsColored,
             (gltf) => {
+                updateLoadingFile(pathSubpanelsColored, 'loaded');
                 subpanelsColored = gltf.scene;
                 subpanelsColored.position.set(0, 0, 0);
                 
@@ -1167,18 +1296,21 @@
                     }
                 });
                 updateSubpanelsColoredOpacity(0);
-                scene.add(subpanelsColored);
+                // Model added to scene only when visible (setStepVisibility)
                 console.log('SubpanelsColored loaded');
                 checkModelsLoaded();
             },
             undefined,
-            (error) => console.error('Error loading SubpanelsColored:', error)
+            (error) => { updateLoadingFile(pathSubpanelsColored, 'error'); console.error('Error loading SubpanelsColored:', error); }
         );
         
         // Load SimpleBuilding (controlled by step system)
+        const pathSimpleBuilding = './SimpleBuilding.glb';
+        updateLoadingFile(pathSimpleBuilding, 'loading');
         loader.load(
-            './SimpleBuilding.glb',
+            pathSimpleBuilding,
             (gltf) => {
+                updateLoadingFile(pathSimpleBuilding, 'loaded');
                 simpleBuilding = gltf.scene;
                 simpleBuilding.position.set(0, 0, -0.5); //slight shift so its not overlapping and cliping
                 
@@ -1204,18 +1336,21 @@
                 // Force immediate opacity update to ensure it's invisible
                 updateSimpleBuildingOpacity(0);
                 
-                scene.add(simpleBuilding);
+                // Model added to scene only when visible (setStepVisibility)
                 console.log('SimpleBuilding loaded (starts invisible)');
                 checkModelsLoaded();
             },
             undefined,
-            (error) => console.error('Error loading SimpleBuilding:', error)
+            (error) => { updateLoadingFile(pathSimpleBuilding, 'error'); console.error('Error loading SimpleBuilding:', error); }
         );
         
         // Load AttractorPipe
+        const pathAttractorPipe = './attractorsPipe.glb';
+        updateLoadingFile(pathAttractorPipe, 'loading');
         loader.load(
-            './attractorsPipe.glb',
+            pathAttractorPipe,
             (gltf) => {
+                updateLoadingFile(pathAttractorPipe, 'loaded');
                 attractorPipe = gltf.scene;
                 attractorPipe.position.set(0, 0, 0);
                 configureModelForRendering(attractorPipe);
@@ -1233,22 +1368,26 @@
                         });
                     }
                 });
-                scene.add(attractorPipe);
+                // Model added to scene only when visible (setStepVisibility)
                 updateAttractorPipeOpacity(0);
                 console.log('AttractorPipe loaded');
                 checkModelsLoaded();
             },
             undefined,
             (error) => {
+                updateLoadingFile(pathAttractorPipe, 'error');
                 console.warn('attractorPipe.glb not found - this model will be skipped. Error:', error);
                 checkModelsLoaded();
             }
         );
         
         // Load SubpanelsOutlinePipe
+        const pathSubpanelsOutline = './subpanelsOutline-Pipe.glb';
+        updateLoadingFile(pathSubpanelsOutline, 'loading');
         loader.load(
-            './subpanelsOutline-Pipe.glb',
+            pathSubpanelsOutline,
             (gltf) => {
+                updateLoadingFile(pathSubpanelsOutline, 'loaded');
                 subpanelsOutlinePipe = gltf.scene;
                 subpanelsOutlinePipe.position.set(0, 0, 0);
                 configureModelForRendering(subpanelsOutlinePipe);
@@ -1266,19 +1405,22 @@
                         });
                     }
                 });
-                scene.add(subpanelsOutlinePipe);                // Force opacity update to ensure it's invisible
+                // Model added to scene only when visible (setStepVisibility)
                 updateSubpanelsOutlinePipeOpacity(0);
                 console.log('SubpanelsOutlinePipe loaded (starts invisible)');
                 checkModelsLoaded();
             },
             undefined,
-            (error) => console.error('Error loading SubpanelsOutlinePipe:', error)
+            (error) => { updateLoadingFile(pathSubpanelsOutline, 'error'); console.error('Error loading SubpanelsOutlinePipe:', error); }
         );
         
         // Load PanelInfillUntrimmed
+        const pathPanelInfillUntrimmed = './Panel-Infill-Untrimmed.glb';
+        updateLoadingFile(pathPanelInfillUntrimmed, 'loading');
         loader.load(
-            './Panel-Infill-Untrimmed.glb',
+            pathPanelInfillUntrimmed,
             (gltf) => {
+                updateLoadingFile(pathPanelInfillUntrimmed, 'loaded');
                 panelInfillUntrimmed = gltf.scene;
                 panelInfillUntrimmed.position.set(0, 0, 0);
                 configureModelForRendering(panelInfillUntrimmed);
@@ -1294,18 +1436,21 @@
                     }
                 });
                 updatePanelInfillUntrimmedOpacity(0);
-                scene.add(panelInfillUntrimmed);
+                // Model added to scene only when visible (setStepVisibility)
                 console.log('PanelInfillUntrimmed loaded');
                 checkModelsLoaded();
             },
             undefined,
-            (error) => console.error('Error loading PanelInfillUntrimmed:', error)
+            (error) => { updateLoadingFile(pathPanelInfillUntrimmed, 'error'); console.error('Error loading PanelInfillUntrimmed:', error); }
         );
         
         // Load PanelInfillTrimmed
+        const pathPanelInfillTrimmed = './Panel-Infill-Trimmed.glb';
+        updateLoadingFile(pathPanelInfillTrimmed, 'loading');
         loader.load(
-            './Panel-Infill-Trimmed.glb',
+            pathPanelInfillTrimmed,
             (gltf) => {
+                updateLoadingFile(pathPanelInfillTrimmed, 'loaded');
                 panelInfillTrimmed = gltf.scene;
                 panelInfillTrimmed.position.set(0, 0, 0);
                 configureModelForRendering(panelInfillTrimmed);
@@ -1321,18 +1466,21 @@
                     }
                 });
                 updatePanelInfillTrimmedOpacity(0);
-                scene.add(panelInfillTrimmed);
+                // Model added to scene only when visible (setStepVisibility)
                 console.log('PanelInfillTrimmed loaded');
                 checkModelsLoaded();
             },
             undefined,
-            (error) => console.error('Error loading PanelInfillTrimmed:', error)
+            (error) => { updateLoadingFile(pathPanelInfillTrimmed, 'error'); console.error('Error loading PanelInfillTrimmed:', error); }
         );
         
         // Load PanelInfill
+        const pathPanelInfill = './Panels-Infill.glb';
+        updateLoadingFile(pathPanelInfill, 'loading');
         loader.load(
-            './Panels-Infill.glb',
+            pathPanelInfill,
             (gltf) => {
+                updateLoadingFile(pathPanelInfill, 'loaded');
                 panelInfill = gltf.scene;
                 panelInfill.position.set(0, 0, 0);
                 // Configure model for rendering - preserve colors from GLTF file
@@ -1349,12 +1497,12 @@
                     }
                 });
                 updatePanelInfillOpacity(0);
-                scene.add(panelInfill);
+                // Model added to scene only when visible (setStepVisibility)
                 console.log('PanelInfill loaded');
                 checkModelsLoaded();
             },
             undefined,
-            (error) => console.error('Error loading PanelInfill:', error)
+            (error) => { updateLoadingFile(pathPanelInfill, 'error'); console.error('Error loading PanelInfill:', error); }
         );
         
         // Check if all required models are loaded (attractorPipe is optional)
@@ -1371,7 +1519,8 @@
             const allRequiredLoaded = requiredModels.every(model => model !== null);
             
             if (allRequiredLoaded) {
-                document.getElementById('loading').style.display = 'none';
+                const popup = document.getElementById('loading-popup');
+                if (popup) popup.classList.add('hidden');
                 
                 // Log scene info for debugging
                 console.log('All required models loaded. Scene children:', scene.children.length);
@@ -1410,6 +1559,20 @@
             }
         }
         
+        // Add or remove a model from the scene (only visible models are in the scene for performance)
+        function addOrRemoveModelFromScene(modelName, inScene) {
+            const modelInfo = modelMap[modelName];
+            if (!modelInfo) return;
+            const model = modelInfo.model();
+            if (!model) return;
+            const inSceneNow = scene.children.includes(model);
+            if (inScene && !inSceneNow) {
+                scene.add(model);
+            } else if (!inScene && inSceneNow) {
+                scene.remove(model);
+            }
+        }
+        
         // Set visibility for all models based on step configuration
         function setStepVisibility(stepIndex) {
             const step = animationConfig.steps[stepIndex];
@@ -1418,7 +1581,7 @@
             // Get all model names
             const allModelNames = Object.keys(modelMap);
             
-            // Set opacity for each model
+            // Set opacity for each model and add/remove from scene (only visible models in scene)
             allModelNames.forEach(modelName => {
                 const shouldBeVisible = step.models.includes(modelName);
                 const opacity = shouldBeVisible ? 1 : 0;
@@ -1426,6 +1589,7 @@
                 if (modelInfo && modelInfo.update) {
                     modelInfo.update(opacity);
                 }
+                addOrRemoveModelFromScene(modelName, shouldBeVisible);
             });
             
             // Update step text
@@ -1467,7 +1631,14 @@
                     updateStepText(i);
                 }, [], transitionStartTime);
                 
-                // Fade out items that are leaving
+                // Add fade-in models to scene at start of transition (so they can fade in)
+                mainTimeline.call(() => {
+                    transition.fadeIn.forEach(modelName => {
+                        addOrRemoveModelFromScene(modelName, true);
+                    });
+                }, [], transitionStartTime);
+                
+                // Fade out items that are leaving; remove from scene when fully invisible
                 transition.fadeOut.forEach(modelName => {
                     const modelInfo = modelMap[modelName];
                     if (modelInfo && modelInfo.update) {
@@ -1478,6 +1649,9 @@
                             ease: "power2.in",
                             onUpdate: function() {
                                 modelInfo.update(fadeOut.progress);
+                            },
+                            onComplete: function() {
+                                addOrRemoveModelFromScene(modelName, false);
                             }
                         }, transitionStartTime);
                     }
@@ -1543,11 +1717,16 @@
             let isManualMode = false;
             let wasPausedBeforeManual = false;
             
-            // Mouse interaction tracking for click vs drag detection
+            // Mouse interaction tracking for click vs drag detection (left and right)
             let mouseDownTime = 0;
             let mouseDownX = 0;
             let mouseDownY = 0;
             let hasMoved = false;
+            let rightMouseDownTime = 0;
+            let rightMouseDownX = 0;
+            let rightMouseDownY = 0;
+            let rightHasMoved = false;
+            let rightClickWasShortAndStatic = false; // set on right mouseup, read in contextmenu
             const DRAG_THRESHOLD = 5; // pixels - if mouse moves more than this, it's a drag
             const LONG_CLICK_THRESHOLD = 200; // milliseconds - if held longer, it's a long click
             
@@ -1612,18 +1791,22 @@
                 }
             }
             
-            // Mouse down - track position and time
+            // Mouse down - track position and time (left and right)
             canvas.addEventListener('mousedown', (e) => {
-                // Only handle left mouse button for step control
                 if (e.button === 0) {
                     mouseDownTime = Date.now();
                     mouseDownX = e.clientX;
                     mouseDownY = e.clientY;
                     hasMoved = false;
+                } else if (e.button === 2) {
+                    rightMouseDownTime = Date.now();
+                    rightMouseDownX = e.clientX;
+                    rightMouseDownY = e.clientY;
+                    rightHasMoved = false;
                 }
             });
             
-            // Mouse move - detect if user is dragging
+            // Mouse move - detect if user is dragging (left or right)
             canvas.addEventListener('mousemove', (e) => {
                 if (mouseDownTime > 0) {
                     const dx = Math.abs(e.clientX - mouseDownX);
@@ -1632,9 +1815,16 @@
                         hasMoved = true;
                     }
                 }
+                if (rightMouseDownTime > 0) {
+                    const dx = Math.abs(e.clientX - rightMouseDownX);
+                    const dy = Math.abs(e.clientY - rightMouseDownY);
+                    if (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD) {
+                        rightHasMoved = true;
+                    }
+                }
             });
             
-            // Mouse up - determine if it was a click or drag
+            // Mouse up - determine if it was a click or drag (left or right)
             canvas.addEventListener('mouseup', (e) => {
                 if (e.button === 0 && mouseDownTime > 0) {
                     const clickDuration = Date.now() - mouseDownTime;
@@ -1647,16 +1837,24 @@
                         nextStep();
                     }
                     
-                    // Reset tracking
                     mouseDownTime = 0;
                     hasMoved = false;
+                } else if (e.button === 2 && rightMouseDownTime > 0) {
+                    const clickDuration = Date.now() - rightMouseDownTime;
+                    const isLongClick = clickDuration > LONG_CLICK_THRESHOLD;
+                    rightClickWasShortAndStatic = !rightHasMoved && !isLongClick;
+                    rightMouseDownTime = 0;
+                    rightHasMoved = false;
                 }
             });
             
-            // Right click - go to previous step
+            // Right click - go to previous step only if short click (not hold/drag for pan)
             canvas.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
-                previousStep();
+                if (rightClickWasShortAndStatic) {
+                    previousStep();
+                }
+                rightClickWasShortAndStatic = false;
                 return false;
             });
             

@@ -81,14 +81,14 @@ export function setupRenderer(container) {
     renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Soft shadow edges
     
     /**
-     * DEFAULT RENDERER SETTINGS
-     * Tone Mapping: NoToneMapping (default) - fastest, no compression, works for typical lighting
-     * - This is Three.js default - renders raw light values directly
-     * - No exposure needed with NoToneMapping
+     * Tone mapping: compress HDR-like values for a more natural look.
+     * toneMappingExposure: overall brightness (> 1 = brighter, < 1 = darker).
      */
     renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.toneMapping = THREE.NoToneMapping; // Default - fastest, no compression
-    
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    //renderer.toneMapping = THREE.ReinhardToneMapping;
+    renderer.toneMappingExposure = 1.5;
+
     container.appendChild(renderer.domElement);
     return renderer;
 }
@@ -112,6 +112,34 @@ export function createBaseMaterial() {
     baseMaterial.emissiveIntensity = 0.0;
     
     return baseMaterial;
+}
+
+/**
+ * Give thin/flat geometries a minimum bounding volume so they aren't culled when viewed edge-on.
+ * Expands any dimension of the geometry's bounding box that is below minSize, then updates the bounding sphere.
+ */
+function ensureMinimumBoundingVolume(geometry, minSize = 0.01) {
+    if (!geometry?.computeBoundingBox) return;
+    geometry.computeBoundingBox();
+    const box = geometry.boundingBox;
+    const min = box.min;
+    const max = box.max;
+    const dx = max.x - min.x;
+    const dy = max.y - min.y;
+    const dz = max.z - min.z;
+    const needExpand = dx < minSize || dy < minSize || dz < minSize;
+    if (!needExpand) return;
+    const half = minSize / 2;
+    const cx = (min.x + max.x) / 2;
+    const cy = (min.y + max.y) / 2;
+    const cz = (min.z + max.z) / 2;
+    if (dx < minSize) { box.min.x = cx - half; box.max.x = cx + half; }
+    if (dy < minSize) { box.min.y = cy - half; box.max.y = cy + half; }
+    if (dz < minSize) { box.min.z = cz - half; box.max.z = cz + half; }
+    // Update bounding sphere to encompass expanded box (so frustum culling keeps mesh visible when edge-on)
+    if (!geometry.boundingSphere) geometry.boundingSphere = new THREE.Sphere();
+    box.getCenter(geometry.boundingSphere.center);
+    geometry.boundingSphere.radius = box.getSize(new THREE.Vector3()).length() / 2;
 }
 
 export function setupMaterialDoubleSide(mesh) {
@@ -147,7 +175,8 @@ export function configureModelForRendering(model, preserveColors = false) {
             // Enable shadows for definition
             child.castShadow = true;
             child.receiveShadow = true;
-            
+            // Give thin/flat geometries a minimum bounding volume so they aren't culled when viewed edge-on
+            if (child.geometry) ensureMinimumBoundingVolume(child.geometry);
             // Replace all materials with the global base material
             if (child.material) {
                 // Store original properties before replacing material
@@ -210,6 +239,9 @@ export function configureModelForRendering(model, preserveColors = false) {
                 } else {
                     child.material.needsUpdate = true;
                 }
+                // Global: render both sides so meshes don't disappear when viewed from behind
+                const materials = Array.isArray(child.material) ? child.material : [child.material];
+                materials.forEach(mat => { mat.side = THREE.DoubleSide; });
             }
         }
     });
@@ -239,13 +271,9 @@ export function setupSSAO(scene, camera, renderer, SSAOPass, EffectComposer, Ren
     // composer.addPass(ssaoPass);
     
     const outputPass = new OutputPass();
-    
-    // Debug: Check OutputPass settings (might affect brightness)
-    console.log('[PostProcessing] OutputPass created:', {
-        toneMapping: outputPass.toneMapping,
-        hasToneMapping: 'toneMapping' in outputPass
-    });
-    
+    outputPass.toneMapping = renderer.toneMapping;
+    outputPass.exposure = renderer.toneMappingExposure;
+
     composer.addPass(outputPass);
     
     return composer;
