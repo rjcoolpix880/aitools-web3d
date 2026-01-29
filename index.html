@@ -259,6 +259,7 @@
         const animationConfig = {
             stepTiming: 2,      // How long each step lasts (in seconds)
             fadeTiming: 1,      // How long fades take (in seconds)
+            lastStepHoldMultiplier: 4,  // Last step is held this many times longer (e.g. 4 = 4× stepTiming)
             
             // Define what's visible at each step - models and text on same line for easy editing
             // Mapping: Circles → circlePipes, Cylinder → cylinder, Base Surface - Untrimmed → baseSurfaceUntrimmedMiddle + baseSurfaceUntrimmedSides
@@ -1602,12 +1603,18 @@
             console.log('[Animation] Config:', animationConfig);
             
             // Create main timeline that loops
-            mainTimeline = gsap.timeline({ repeat: -1 });
+            mainTimeline = gsap.timeline({
+                repeat: -1,
+                onRepeat: function() {
+                    // When loop restarts, reset to step 0 so last step's objects are removed
+                    setStepVisibility(0);
+                }
+            });
             
             // Set initial state - first step
             setStepVisibility(0);
             
-            // Also set in timeline at time 0 to ensure it happens at the start of each loop
+            // Also set in timeline at time 0 so first step is shown at start of each loop (backup for seek)
             mainTimeline.set({}, {
                 onStart: function() {
                     setStepVisibility(0);
@@ -1677,6 +1684,14 @@
                 // Items that stay invisible don't need animation (they're already at opacity 0)
             }
             
+            // Hold the last step longer (dynamic: uses last step index and config multiplier)
+            const numSteps = animationConfig.steps.length;
+            const lastStepMultiplier = animationConfig.lastStepHoldMultiplier ?? 1;
+            const lastTransitionEndTime = (numSteps - 1) * animationConfig.stepTiming + (numSteps - 1) * animationConfig.fadeTiming;
+            mainTimeline.to({}, {
+                duration: lastStepMultiplier * animationConfig.stepTiming
+            }, lastTransitionEndTime);
+            
             console.log('[Animation] All step transitions added to timeline');
             
             // Initialize manual step control
@@ -1695,9 +1710,13 @@
                     // During fade transition - return previous step index
                     return i > 0 ? i - 1 : 0;
                 }
-                // Check if we're in the stable period of this step
+                // Check if we're in the stable period of this step (last step uses lastStepHoldMultiplier)
+                const mult = animationConfig.lastStepHoldMultiplier ?? 1;
+                const holdDuration = (i === animationConfig.steps.length - 1)
+                    ? animationConfig.fadeTiming + mult * animationConfig.stepTiming
+                    : animationConfig.stepTiming;
                 if (time >= accumulatedTime + animationConfig.fadeTiming && 
-                    (i === animationConfig.steps.length - 1 || time < accumulatedTime + animationConfig.stepTiming)) {
+                    (i === animationConfig.steps.length - 1 || time < accumulatedTime + holdDuration)) {
                     return i;
                 }
                 accumulatedTime += animationConfig.fadeTiming;
